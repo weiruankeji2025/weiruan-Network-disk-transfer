@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         威软网盘转存工具
 // @namespace    https://github.com/weiruankeji2025/weiruan-Network-disk-transfer
-// @version      1.2.1
+// @version      1.3.0
 // @description  网盘高速互相转存工具 - 支持登录各网盘后真实转存
 // @author       威软网盘转存工具
 // @match        *://pan.baidu.com/*
@@ -62,7 +62,7 @@
     // ==================== 配置信息 ====================
     const CONFIG = {
         appName: '威软网盘转存工具',
-        version: '1.2.1',
+        version: '1.3.0',
         author: '威软网盘转存工具',
         supportedDisks: [
             { name: '百度网盘', domain: ['pan.baidu.com', 'yun.baidu.com'], color: '#06a7ff', type: 'baidu' },
@@ -1524,6 +1524,209 @@
                     });
                 });
             }
+        },
+
+        // 百度网盘API
+        baidu: {
+            // 验证分享链接
+            verifyShare: async (surl, pwd = '') => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://pan.baidu.com/share/verify?surl=' + surl,
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        data: 'pwd=' + pwd,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.errno === 0) {
+                                    resolve(data);
+                                } else {
+                                    reject(new Error(data.show_msg || '提取码错误'));
+                                }
+                            } catch (e) { reject(e); }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 获取分享文件列表
+            getShareFileList: async (shareId, sharePwd = '') => {
+                // 处理shareId，可能是完整URL或短码
+                let surl = shareId;
+                if (shareId.startsWith('1')) {
+                    surl = shareId.substring(1);
+                }
+
+                return new Promise((resolve, reject) => {
+                    // 先验证提取码
+                    const verifyFirst = sharePwd ? DiskAPI.baidu.verifyShare(surl, sharePwd) : Promise.resolve();
+
+                    verifyFirst.then(() => {
+                        GM_xmlhttpRequest({
+                            method: 'GET',
+                            url: `https://pan.baidu.com/share/wxlist?shorturl=${surl}&root=1&web=1`,
+                            onload: (res) => {
+                                try {
+                                    const data = JSON.parse(res.responseText);
+                                    if (data.errno === 0 && data.data && data.data.list) {
+                                        resolve(data.data.list);
+                                    } else {
+                                        reject(new Error(data.show_msg || '获取文件列表失败'));
+                                    }
+                                } catch (e) { reject(e); }
+                            },
+                            onerror: reject
+                        });
+                    }).catch(reject);
+                });
+            },
+
+            // 转存到百度网盘
+            saveShare: async (shareId, sharePwd, fsIds, targetPath = '/') => {
+                const cred = CredentialManager.get('baidu');
+                if (!cred || !cred.cookie) {
+                    throw new Error('请先登录百度网盘');
+                }
+
+                let surl = shareId;
+                if (shareId.startsWith('1')) {
+                    surl = shareId.substring(1);
+                }
+
+                return new Promise((resolve, reject) => {
+                    // 获取分享信息
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://pan.baidu.com/share/wxlist?shorturl=${surl}&root=1&web=1`,
+                        headers: { 'Cookie': cred.cookie },
+                        onload: async (res) => {
+                            try {
+                                const shareData = JSON.parse(res.responseText);
+                                if (shareData.errno !== 0) {
+                                    reject(new Error('获取分享信息失败'));
+                                    return;
+                                }
+
+                                const shareUk = shareData.data.uk;
+                                const shareKey = shareData.data.seckey;
+
+                                // 执行转存
+                                GM_xmlhttpRequest({
+                                    method: 'POST',
+                                    url: 'https://pan.baidu.com/share/transfer?shareid=' + shareData.data.shareid + '&from=' + shareUk,
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                        'Cookie': cred.cookie
+                                    },
+                                    data: `fsidlist=${JSON.stringify(fsIds)}&path=${encodeURIComponent(targetPath)}`,
+                                    onload: (res2) => {
+                                        try {
+                                            const result = JSON.parse(res2.responseText);
+                                            if (result.errno === 0) {
+                                                resolve({ success: true, message: '转存成功' });
+                                            } else {
+                                                resolve({ success: false, message: result.show_msg || '转存失败' });
+                                            }
+                                        } catch (e) { reject(e); }
+                                    },
+                                    onerror: reject
+                                });
+                            } catch (e) { reject(e); }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 离线下载（用于跨网盘转存）
+            offlineDownload: async (url, savePath = '/') => {
+                const cred = CredentialManager.get('baidu');
+                if (!cred || !cred.cookie) {
+                    throw new Error('请先登录百度网盘');
+                }
+
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://pan.baidu.com/rest/2.0/services/cloud_dl?method=add_task',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Cookie': cred.cookie
+                        },
+                        data: `source_url=${encodeURIComponent(url)}&save_path=${encodeURIComponent(savePath)}`,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.error_code === 0 || data.task_id) {
+                                    resolve({ success: true, message: '离线下载任务已创建', taskId: data.task_id });
+                                } else {
+                                    resolve({ success: false, message: data.error_msg || '创建离线任务失败' });
+                                }
+                            } catch (e) { reject(e); }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
+        },
+
+        // 获取下载链接（用于跨网盘转存）
+        getDownloadUrl: {
+            aliyun: async (shareId, shareToken, fileId) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://api.aliyundrive.com/v2/file/get_share_link_download_url',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-share-token': shareToken
+                        },
+                        data: JSON.stringify({
+                            share_id: shareId,
+                            file_id: fileId
+                        }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.download_url) {
+                                    resolve(data.download_url);
+                                } else {
+                                    reject(new Error(data.message || '获取下载链接失败'));
+                                }
+                            } catch (e) { reject(e); }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            quark: async (pwdId, stoken, fid) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://drive.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc',
+                        headers: { 'Content-Type': 'application/json' },
+                        data: JSON.stringify({
+                            fids: [fid]
+                        }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.status === 200 && data.data && data.data[0]) {
+                                    resolve(data.data[0].download_url);
+                                } else {
+                                    reject(new Error('获取下载链接失败'));
+                                }
+                            } catch (e) { reject(e); }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
         }
     };
 
@@ -2114,7 +2317,7 @@
             }
         },
 
-        renderFileList: (files) => {
+        renderFileList: (files, sourceType) => {
             const container = document.getElementById('wr-file-list');
             if (!files || files.length === 0) {
                 container.style.display = 'none';
@@ -2122,13 +2325,38 @@
             }
 
             container.style.display = 'block';
-            container.innerHTML = files.map((file, index) => `
-                <div class="wr-file-item">
-                    <input type="checkbox" class="wr-file-checkbox" data-index="${index}" checked>
-                    <span class="wr-file-name">${file.name || file.server_filename || file.fileName || file.FileName}</span>
-                    <span class="wr-file-size">${Utils.formatSize(file.size || file.Size || 0)}</span>
-                </div>
-            `).join('');
+            container.innerHTML = files.map((file, index) => {
+                // 根据不同网盘获取文件名和大小
+                let fileName, fileSize;
+                switch (sourceType) {
+                    case 'aliyun':
+                        fileName = file.name;
+                        fileSize = file.size;
+                        break;
+                    case 'quark':
+                        fileName = file.file_name || file.name;
+                        fileSize = file.size || file.file_size;
+                        break;
+                    case '123pan':
+                        fileName = file.FileName;
+                        fileSize = file.Size;
+                        break;
+                    case 'baidu':
+                        fileName = file.server_filename || file.filename;
+                        fileSize = file.size;
+                        break;
+                    default:
+                        fileName = file.name || file.file_name || file.fileName || file.FileName || file.server_filename;
+                        fileSize = file.size || file.Size || file.file_size || 0;
+                }
+                return `
+                    <div class="wr-file-item">
+                        <input type="checkbox" class="wr-file-checkbox" data-index="${index}" checked>
+                        <span class="wr-file-name">${fileName || '未知文件'}</span>
+                        <span class="wr-file-size">${Utils.formatSize(fileSize || 0)}</span>
+                    </div>
+                `;
+            }).join('');
 
             TransferManager.fileList = files;
         },
@@ -2191,12 +2419,16 @@
                         files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
                         break;
 
+                    case 'baidu':
+                        files = await DiskAPI.baidu.getShareFileList(shareInfo.shareId, sharePwd);
+                        break;
+
                     default:
                         UI.showToast(`暂不支持获取${shareInfo.name}的文件列表，请直接转存`, 'info');
                         return;
                 }
 
-                UI.renderFileList(files);
+                UI.renderFileList(files, shareInfo.type);
                 TransferManager.shareInfo = shareInfo;
                 TransferManager.sharePwd = sharePwd;
                 UI.showToast(`获取到 ${files.length} 个文件`, 'success');
@@ -2240,11 +2472,8 @@
                 return;
             }
 
-            // 检查源网盘和目标网盘是否一致
-            if (shareInfo.type !== targetDiskType) {
-                UI.showToast(`暂不支持跨网盘转存，请选择${shareInfo.name}作为目标`, 'warning');
-                return;
-            }
+            // 判断是否为跨网盘转存
+            const isCrossDisk = shareInfo.type !== targetDiskType;
 
             // 开始计时
             TransferManager.startTime = Date.now();
@@ -2265,70 +2494,156 @@
 
                 UI.updateProgress(20, '正在获取分享信息...');
 
-                switch (shareInfo.type) {
-                    case 'aliyun':
-                        let shareToken = TransferManager.shareToken;
-                        if (!shareToken) {
-                            shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+                // 跨网盘转存处理
+                if (isCrossDisk) {
+                    UI.updateProgress(30, '跨网盘转存准备中...');
+
+                    // 获取源网盘文件列表
+                    let files = TransferManager.fileList;
+                    if (!files || files.length === 0) {
+                        switch (shareInfo.type) {
+                            case 'aliyun':
+                                const shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+                                files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+                                TransferManager.shareToken = shareToken;
+                                break;
+                            case 'quark':
+                                const quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
+                                files = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
+                                TransferManager.quarkToken = quarkToken;
+                                break;
+                            case '123pan':
+                                files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
+                                break;
+                            case 'baidu':
+                                files = await DiskAPI.baidu.getShareFileList(shareInfo.shareId, sharePwd);
+                                break;
+                            default:
+                                throw new Error(`暂不支持从${shareInfo.name}获取文件`);
                         }
+                    }
 
-                        UI.updateProgress(40, '正在获取文件列表...');
-                        let files = TransferManager.fileList;
-                        if (!files || files.length === 0) {
-                            files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+                    const selectedFiles = UI.getSelectedFiles(files);
+                    if (selectedFiles.length === 0) {
+                        throw new Error('请选择要转存的文件');
+                    }
+
+                    UI.updateProgress(50, '正在执行跨网盘转存...');
+
+                    // 跨网盘转存：复制分享链接让用户使用目标网盘的离线下载功能
+                    // 由于直接跨网盘转存需要下载再上传，在浏览器中不可行
+                    // 所以提供分享链接供用户使用目标网盘的离线下载功能
+
+                    const shareUrl = shareLink;
+                    const fileNames = selectedFiles.map(f => {
+                        switch (shareInfo.type) {
+                            case 'aliyun': return f.name;
+                            case 'quark': return f.file_name || f.name;
+                            case '123pan': return f.FileName;
+                            case 'baidu': return f.server_filename;
+                            default: return f.name || f.file_name || '未知文件';
                         }
+                    });
 
-                        const selectedFiles = UI.getSelectedFiles(files);
-                        if (selectedFiles.length === 0) {
-                            throw new Error('请选择要转存的文件');
-                        }
+                    // 尝试使用目标网盘的离线下载功能
+                    if (targetDiskType === 'baidu') {
+                        // 百度网盘支持离线下载
+                        UI.updateProgress(70, '正在创建离线下载任务...');
+                        result = await DiskAPI.baidu.offlineDownload(shareUrl);
+                    } else {
+                        // 其他网盘：复制链接提示用户手动操作
+                        GM_setClipboard(shareUrl);
+                        result = {
+                            success: true,
+                            message: `跨网盘转存：分享链接已复制到剪贴板\n\n请在${targetDiskName}中使用「离线下载」功能粘贴链接进行转存\n\n文件列表：\n${fileNames.join('\n')}`
+                        };
+                        UI.showToast('分享链接已复制，请使用目标网盘的离线下载功能', 'info', 5000);
+                    }
+                } else {
+                    // 同网盘转存
+                    switch (shareInfo.type) {
+                        case 'aliyun':
+                            let shareToken = TransferManager.shareToken;
+                            if (!shareToken) {
+                                shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+                            }
 
-                        UI.updateProgress(60, '正在执行转存...');
-                        const fileIds = selectedFiles.map(f => f.file_id);
-                        result = await DiskAPI.aliyun.saveShare(shareInfo.shareId, shareToken, fileIds);
-                        break;
+                            UI.updateProgress(40, '正在获取文件列表...');
+                            let files = TransferManager.fileList;
+                            if (!files || files.length === 0) {
+                                files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+                            }
 
-                    case 'quark':
-                        let quarkToken = TransferManager.quarkToken;
-                        if (!quarkToken) {
-                            quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
-                        }
+                            const selectedFiles = UI.getSelectedFiles(files);
+                            if (selectedFiles.length === 0) {
+                                throw new Error('请选择要转存的文件');
+                            }
 
-                        UI.updateProgress(40, '正在获取文件列表...');
-                        let quarkFiles = TransferManager.fileList;
-                        if (!quarkFiles || quarkFiles.length === 0) {
-                            quarkFiles = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
-                        }
+                            UI.updateProgress(60, '正在执行转存...');
+                            const fileIds = selectedFiles.map(f => f.file_id);
+                            result = await DiskAPI.aliyun.saveShare(shareInfo.shareId, shareToken, fileIds);
+                            break;
 
-                        const selectedQuarkFiles = UI.getSelectedFiles(quarkFiles);
-                        if (selectedQuarkFiles.length === 0) {
-                            throw new Error('请选择要转存的文件');
-                        }
+                        case 'quark':
+                            let quarkToken = TransferManager.quarkToken;
+                            if (!quarkToken) {
+                                quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
+                            }
 
-                        UI.updateProgress(60, '正在执行转存...');
-                        const fids = selectedQuarkFiles.map(f => f.fid);
-                        result = await DiskAPI.quark.saveShare(shareInfo.shareId, quarkToken.stoken, fids);
-                        break;
+                            UI.updateProgress(40, '正在获取文件列表...');
+                            let quarkFiles = TransferManager.fileList;
+                            if (!quarkFiles || quarkFiles.length === 0) {
+                                quarkFiles = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
+                            }
 
-                    case '123pan':
-                        UI.updateProgress(40, '正在获取文件列表...');
-                        let pan123Files = TransferManager.fileList;
-                        if (!pan123Files || pan123Files.length === 0) {
-                            pan123Files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
-                        }
+                            const selectedQuarkFiles = UI.getSelectedFiles(quarkFiles);
+                            if (selectedQuarkFiles.length === 0) {
+                                throw new Error('请选择要转存的文件');
+                            }
 
-                        const selected123Files = UI.getSelectedFiles(pan123Files);
-                        if (selected123Files.length === 0) {
-                            throw new Error('请选择要转存的文件');
-                        }
+                            UI.updateProgress(60, '正在执行转存...');
+                            const fids = selectedQuarkFiles.map(f => f.fid);
+                            result = await DiskAPI.quark.saveShare(shareInfo.shareId, quarkToken.stoken, fids);
+                            break;
 
-                        UI.updateProgress(60, '正在执行转存...');
-                        const fileIdList = selected123Files.map(f => f.FileId);
-                        result = await DiskAPI.pan123.saveShare(shareInfo.shareId, sharePwd, fileIdList);
-                        break;
+                        case '123pan':
+                            UI.updateProgress(40, '正在获取文件列表...');
+                            let pan123Files = TransferManager.fileList;
+                            if (!pan123Files || pan123Files.length === 0) {
+                                pan123Files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
+                            }
 
-                    default:
-                        throw new Error(`暂不支持从${shareInfo.name}转存`);
+                            const selected123Files = UI.getSelectedFiles(pan123Files);
+                            if (selected123Files.length === 0) {
+                                throw new Error('请选择要转存的文件');
+                            }
+
+                            UI.updateProgress(60, '正在执行转存...');
+                            const fileIdList = selected123Files.map(f => f.FileId);
+                            result = await DiskAPI.pan123.saveShare(shareInfo.shareId, sharePwd, fileIdList);
+                            break;
+
+                        case 'baidu':
+                            UI.updateProgress(40, '正在获取文件列表...');
+                            let baiduFiles = TransferManager.fileList;
+                            if (!baiduFiles || baiduFiles.length === 0) {
+                                baiduFiles = await DiskAPI.baidu.getShareFileList(shareInfo.shareId, sharePwd);
+                            }
+
+                            const selectedBaiduFiles = UI.getSelectedFiles(baiduFiles);
+                            if (selectedBaiduFiles.length === 0) {
+                                throw new Error('请选择要转存的文件');
+                            }
+
+                            UI.updateProgress(60, '正在执行转存...');
+                            const fsIds = selectedBaiduFiles.map(f => f.fs_id);
+                            const targetPath = document.getElementById('wr-target-path')?.value || '/';
+                            result = await DiskAPI.baidu.saveShare(shareInfo.shareId, sharePwd, fsIds, targetPath);
+                            break;
+
+                        default:
+                            throw new Error(`暂不支持从${shareInfo.name}转存`);
+                    }
                 }
 
                 UI.updateProgress(100, '转存完成！');
