@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         威软网盘转存工具
 // @namespace    https://github.com/weiruankeji2025/weiruan-Network-disk-transfer
-// @version      1.0.0
+// @version      1.1.0
 // @description  网盘高速互相转存工具 - 支持百度网盘、阿里云盘、天翼云盘、夸克网盘、迅雷云盘、115网盘、蓝奏云、和彩云、123云盘等主流网盘
 // @author       威软网盘转存工具
 // @match        *://pan.baidu.com/*
@@ -28,6 +28,18 @@
 // @grant        GM_setClipboard
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @grant        GM_cookie
+// @connect      pan.baidu.com
+// @connect      api.aliyundrive.com
+// @connect      api.alipan.com
+// @connect      cloud.189.cn
+// @connect      drive.quark.cn
+// @connect      pan.xunlei.com
+// @connect      115.com
+// @connect      lanzou.com
+// @connect      yun.139.com
+// @connect      www.123pan.com
+// @connect      drive.uc.cn
 // @connect      *
 // @run-at       document-end
 // @license      MIT
@@ -39,19 +51,19 @@
     // ==================== 配置信息 ====================
     const CONFIG = {
         appName: '威软网盘转存工具',
-        version: '1.0.0',
+        version: '1.1.0',
         author: '威软网盘转存工具',
         supportedDisks: [
-            { name: '百度网盘', domain: ['pan.baidu.com', 'yun.baidu.com'], color: '#06a7ff' },
-            { name: '阿里云盘', domain: ['www.aliyundrive.com', 'www.alipan.com'], color: '#ff6a00' },
-            { name: '天翼云盘', domain: ['cloud.189.cn'], color: '#21a5de' },
-            { name: '夸克网盘', domain: ['pan.quark.cn'], color: '#536dfe' },
-            { name: '迅雷云盘', domain: ['pan.xunlei.com'], color: '#0078d4' },
-            { name: '115网盘', domain: ['115.com'], color: '#2196f3' },
-            { name: '蓝奏云', domain: ['lanzou.com', 'lanzoui.com', 'lanzoux.com', 'lanzouq.com'], color: '#4285f4' },
-            { name: '和彩云', domain: ['yun.139.com'], color: '#ff5722' },
-            { name: '123云盘', domain: ['www.123pan.com', 'www.123865.com'], color: '#409eff' },
-            { name: 'UC网盘', domain: ['drive.uc.cn'], color: '#ff9800' }
+            { name: '百度网盘', domain: ['pan.baidu.com', 'yun.baidu.com'], color: '#06a7ff', type: 'baidu' },
+            { name: '阿里云盘', domain: ['www.aliyundrive.com', 'www.alipan.com'], color: '#ff6a00', type: 'aliyun' },
+            { name: '天翼云盘', domain: ['cloud.189.cn'], color: '#21a5de', type: 'tianyi' },
+            { name: '夸克网盘', domain: ['pan.quark.cn'], color: '#536dfe', type: 'quark' },
+            { name: '迅雷云盘', domain: ['pan.xunlei.com'], color: '#0078d4', type: 'xunlei' },
+            { name: '115网盘', domain: ['115.com'], color: '#2196f3', type: '115' },
+            { name: '蓝奏云', domain: ['lanzou.com', 'lanzoui.com', 'lanzoux.com', 'lanzouq.com'], color: '#4285f4', type: 'lanzou' },
+            { name: '和彩云', domain: ['yun.139.com'], color: '#ff5722', type: 'hecaiyun' },
+            { name: '123云盘', domain: ['www.123pan.com', 'www.123865.com'], color: '#409eff', type: '123pan' },
+            { name: 'UC网盘', domain: ['drive.uc.cn'], color: '#ff9800', type: 'uc' }
         ]
     };
 
@@ -67,7 +79,8 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            min-width: 420px;
+            min-width: 480px;
+            max-width: 520px;
             overflow: hidden;
             animation: wr-fadeIn 0.3s ease-out;
         }
@@ -80,11 +93,6 @@
         @keyframes wr-spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
-        }
-
-        @keyframes wr-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
         }
 
         .wr-panel-header {
@@ -105,10 +113,7 @@
             gap: 10px;
         }
 
-        .wr-panel-title svg {
-            width: 24px;
-            height: 24px;
-        }
+        .wr-panel-title svg { width: 24px; height: 24px; }
 
         .wr-panel-close {
             background: rgba(255,255,255,0.2);
@@ -133,6 +138,8 @@
         .wr-panel-body {
             padding: 20px;
             background: #fff;
+            max-height: 70vh;
+            overflow-y: auto;
         }
 
         .wr-section {
@@ -157,20 +164,71 @@
             border-radius: 2px;
         }
 
+        .wr-login-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+
+        .wr-login-status.logged-in {
+            background: #e8f5e9;
+            border: 1px solid #a5d6a7;
+        }
+
+        .wr-login-status.logged-out {
+            background: #fff3e0;
+            border: 1px solid #ffcc80;
+        }
+
+        .wr-login-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .wr-login-dot.online { background: #4caf50; }
+        .wr-login-dot.offline { background: #ff9800; }
+
+        .wr-login-text {
+            flex: 1;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .wr-login-btn {
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .wr-login-btn:hover {
+            transform: scale(1.05);
+        }
+
         .wr-disk-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
         }
 
         .wr-disk-item {
-            padding: 12px;
+            padding: 10px 6px;
             border: 2px solid #e8e8e8;
             border-radius: 10px;
             cursor: pointer;
             text-align: center;
             transition: all 0.2s;
             background: #fafafa;
+            position: relative;
         }
 
         .wr-disk-item:hover {
@@ -185,33 +243,60 @@
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
         }
 
-        .wr-disk-item.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .wr-disk-name {
-            font-size: 12px;
-            color: #333;
-            font-weight: 500;
-        }
-
-        .wr-disk-icon {
-            width: 32px;
-            height: 32px;
-            margin: 0 auto 8px;
-            border-radius: 8px;
+        .wr-disk-item.logged-in::after {
+            content: '✓';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 16px;
+            height: 16px;
+            background: #4caf50;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+        }
+
+        .wr-disk-item.logged-out::after {
+            content: '!';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 16px;
+            height: 16px;
+            background: #ff9800;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 10px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wr-disk-name {
+            font-size: 11px;
+            color: #333;
+            font-weight: 500;
+            margin-top: 6px;
+        }
+
+        .wr-disk-icon {
+            width: 28px;
+            height: 28px;
+            margin: 0 auto;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
             font-weight: bold;
             color: #fff;
         }
 
-        .wr-input-group {
-            margin-bottom: 16px;
-        }
+        .wr-input-group { margin-bottom: 16px; }
 
         .wr-input-label {
             font-size: 13px;
@@ -261,24 +346,11 @@
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
-        .wr-btn-primary:active {
-            transform: translateY(0);
-        }
-
         .wr-btn-primary:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
-        }
-
-        .wr-btn-secondary {
-            background: #f0f0f0;
-            color: #333;
-        }
-
-        .wr-btn-secondary:hover {
-            background: #e0e0e0;
         }
 
         .wr-status-bar {
@@ -295,9 +367,7 @@
             margin-bottom: 10px;
         }
 
-        .wr-status-row:last-child {
-            margin-bottom: 0;
-        }
+        .wr-status-row:last-child { margin-bottom: 0; }
 
         .wr-status-label {
             font-size: 13px;
@@ -323,23 +393,6 @@
             background: linear-gradient(90deg, #667eea, #764ba2);
             border-radius: 4px;
             transition: width 0.3s ease;
-            position: relative;
-        }
-
-        .wr-progress-fill::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-            animation: wr-shimmer 2s infinite;
-        }
-
-        @keyframes wr-shimmer {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
         }
 
         .wr-toast {
@@ -364,21 +417,10 @@
             to { transform: translateX(0); opacity: 1; }
         }
 
-        .wr-toast-success {
-            background: linear-gradient(135deg, #00b894, #00cec9);
-        }
-
-        .wr-toast-error {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-        }
-
-        .wr-toast-info {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-        }
-
-        .wr-toast-warning {
-            background: linear-gradient(135deg, #fdcb6e, #f39c12);
-        }
+        .wr-toast-success { background: linear-gradient(135deg, #00b894, #00cec9); }
+        .wr-toast-error { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); }
+        .wr-toast-info { background: linear-gradient(135deg, #667eea, #764ba2); }
+        .wr-toast-warning { background: linear-gradient(135deg, #fdcb6e, #f39c12); }
 
         .wr-float-btn {
             position: fixed;
@@ -417,12 +459,6 @@
             bottom: 0;
             background: rgba(0,0,0,0.5);
             z-index: 999998;
-            animation: wr-fadeInBg 0.3s ease-out;
-        }
-
-        @keyframes wr-fadeInBg {
-            from { opacity: 0; }
-            to { opacity: 1; }
         }
 
         .wr-file-list {
@@ -442,18 +478,12 @@
             font-size: 13px;
         }
 
-        .wr-file-item:last-child {
-            border-bottom: none;
-        }
+        .wr-file-item:last-child { border-bottom: none; }
 
-        .wr-file-icon {
-            width: 24px;
-            height: 24px;
-            background: #f0f4ff;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .wr-file-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
         }
 
         .wr-file-name {
@@ -487,11 +517,6 @@
             border-top: 1px solid #e8e8e8;
         }
 
-        .wr-footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-
         .wr-tabs {
             display: flex;
             border-bottom: 2px solid #e8e8e8;
@@ -510,22 +535,15 @@
             margin-bottom: -2px;
         }
 
-        .wr-tab:hover {
-            color: #667eea;
-        }
+        .wr-tab:hover { color: #667eea; }
 
         .wr-tab.active {
             color: #667eea;
             border-bottom-color: #667eea;
         }
 
-        .wr-tab-content {
-            display: none;
-        }
-
-        .wr-tab-content.active {
-            display: block;
-        }
+        .wr-tab-content { display: none; }
+        .wr-tab-content.active { display: block; }
 
         .wr-history-item {
             padding: 12px;
@@ -537,9 +555,7 @@
             align-items: center;
         }
 
-        .wr-history-info {
-            flex: 1;
-        }
+        .wr-history-info { flex: 1; }
 
         .wr-history-title {
             font-size: 14px;
@@ -569,11 +585,25 @@
             background: #ffebee;
             color: #c62828;
         }
+
+        .wr-tip-box {
+            background: #fff3e0;
+            border: 1px solid #ffcc80;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #e65100;
+        }
+
+        .wr-tip-box a {
+            color: #667eea;
+            text-decoration: underline;
+        }
     `;
 
     // ==================== 工具函数 ====================
     const Utils = {
-        // 获取当前网盘类型
         getCurrentDisk: () => {
             const host = window.location.host;
             for (const disk of CONFIG.supportedDisks) {
@@ -584,32 +614,26 @@
             return null;
         },
 
-        // 格式化文件大小
         formatSize: (bytes) => {
-            if (bytes === 0) return '0 B';
+            if (!bytes || bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         },
 
-        // 格式化时间
         formatTime: (ms) => {
             if (ms < 1000) return ms + 'ms';
             if (ms < 60000) return (ms / 1000).toFixed(2) + 's';
             return (ms / 60000).toFixed(2) + 'min';
         },
 
-        // 生成唯一ID
-        generateId: () => {
-            return 'wr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        },
+        generateId: () => 'wr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
 
-        // 解析分享链接
         parseShareLink: (url) => {
             const patterns = [
                 { name: '百度网盘', regex: /pan\.baidu\.com\/s\/([a-zA-Z0-9_-]+)/, type: 'baidu' },
-                { name: '百度网盘', regex: /pan\.baidu\.com\/share\/init\?surl=([a-zA-Z0-9_-]+)/, type: 'baidu' },
+                { name: '百度网盘', regex: /pan\.baidu\.com\/share\/init\?surl=([a-zA-Z0-9_-]+)/, type: 'baidu', prefix: '1' },
                 { name: '阿里云盘', regex: /(?:aliyundrive|alipan)\.com\/s\/([a-zA-Z0-9]+)/, type: 'aliyun' },
                 { name: '天翼云盘', regex: /cloud\.189\.cn\/(?:web\/share\?code=|t\/)([a-zA-Z0-9]+)/, type: 'tianyi' },
                 { name: '夸克网盘', regex: /pan\.quark\.cn\/s\/([a-zA-Z0-9]+)/, type: 'quark' },
@@ -627,7 +651,7 @@
                     return {
                         name: pattern.name,
                         type: pattern.type,
-                        shareId: match[1],
+                        shareId: (pattern.prefix || '') + match[1],
                         url: url
                     };
                 }
@@ -635,7 +659,6 @@
             return null;
         },
 
-        // 保存历史记录
         saveHistory: (record) => {
             const history = GM_getValue('transfer_history', []);
             history.unshift(record);
@@ -643,9 +666,317 @@
             GM_setValue('transfer_history', history);
         },
 
-        // 获取历史记录
-        getHistory: () => {
-            return GM_getValue('transfer_history', []);
+        getHistory: () => GM_getValue('transfer_history', []),
+
+        getCookie: (name) => {
+            const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+            return match ? match[2] : null;
+        }
+    };
+
+    // ==================== 登录检测模块 ====================
+    const LoginChecker = {
+        // 存储登录状态
+        loginStatus: {},
+
+        // 检测百度网盘登录状态
+        checkBaidu: () => {
+            return new Promise((resolve) => {
+                // 方法1: 检查页面上的用户信息
+                const bdstoken = document.querySelector('input[name="bdstoken"]')?.value ||
+                                (typeof window.locals !== 'undefined' ? window.locals.bdstoken : null);
+
+                if (bdstoken) {
+                    LoginChecker.loginStatus.baidu = {
+                        isLoggedIn: true,
+                        bdstoken: bdstoken,
+                        username: document.querySelector('.user-name')?.textContent || '已登录'
+                    };
+                    resolve(true);
+                    return;
+                }
+
+                // 方法2: 通过API检测
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://pan.baidu.com/api/loginStatus?clienttype=0&web=1',
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.errno === 0 && data.login_info) {
+                                LoginChecker.loginStatus.baidu = {
+                                    isLoggedIn: true,
+                                    username: data.login_info.username || '已登录',
+                                    uk: data.login_info.uk
+                                };
+                                resolve(true);
+                            } else {
+                                LoginChecker.loginStatus.baidu = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            LoginChecker.loginStatus.baidu = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => {
+                        LoginChecker.loginStatus.baidu = { isLoggedIn: false };
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        // 检测阿里云盘登录状态
+        checkAliyun: () => {
+            return new Promise((resolve) => {
+                try {
+                    const token = localStorage.getItem('token');
+                    if (token) {
+                        const tokenData = JSON.parse(token);
+                        if (tokenData.access_token && tokenData.expire_time > Date.now()) {
+                            LoginChecker.loginStatus.aliyun = {
+                                isLoggedIn: true,
+                                accessToken: tokenData.access_token,
+                                refreshToken: tokenData.refresh_token,
+                                driveId: tokenData.default_drive_id,
+                                username: tokenData.nick_name || tokenData.user_name || '已登录'
+                            };
+                            resolve(true);
+                            return;
+                        }
+                    }
+                } catch (e) {}
+
+                LoginChecker.loginStatus.aliyun = { isLoggedIn: false };
+                resolve(false);
+            });
+        },
+
+        // 检测夸克网盘登录状态
+        checkQuark: () => {
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://drive.quark.cn/1/clouddrive/member/info?pr=ucpro&fr=pc',
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.status === 200 && data.data) {
+                                LoginChecker.loginStatus.quark = {
+                                    isLoggedIn: true,
+                                    username: data.data.nickname || '已登录',
+                                    memberId: data.data.member_id
+                                };
+                                resolve(true);
+                            } else {
+                                LoginChecker.loginStatus.quark = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            LoginChecker.loginStatus.quark = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => {
+                        LoginChecker.loginStatus.quark = { isLoggedIn: false };
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        // 检测天翼云盘登录状态
+        checkTianyi: () => {
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://cloud.189.cn/api/portal/getUserBriefInfo.action',
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.res_code === 0) {
+                                LoginChecker.loginStatus.tianyi = {
+                                    isLoggedIn: true,
+                                    username: data.nickName || '已登录',
+                                    userId: data.userId
+                                };
+                                resolve(true);
+                            } else {
+                                LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => {
+                        LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        // 检测123云盘登录状态
+        check123pan: () => {
+            return new Promise((resolve) => {
+                const token = localStorage.getItem('authorToken') || Utils.getCookie('authorToken');
+                if (token) {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://www.123pan.com/api/user/info',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.code === 0 && data.data) {
+                                    LoginChecker.loginStatus['123pan'] = {
+                                        isLoggedIn: true,
+                                        username: data.data.nickname || '已登录',
+                                        token: token
+                                    };
+                                    resolve(true);
+                                } else {
+                                    LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
+                                    resolve(false);
+                                }
+                            } catch (e) {
+                                LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        },
+                        onerror: () => {
+                            LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    });
+                } else {
+                    LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
+                    resolve(false);
+                }
+            });
+        },
+
+        // 检测115网盘登录状态
+        check115: () => {
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://my.115.com/?ct=ajax&ac=nav',
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.data && data.data.user_id) {
+                                LoginChecker.loginStatus['115'] = {
+                                    isLoggedIn: true,
+                                    username: data.data.user_name || '已登录',
+                                    userId: data.data.user_id
+                                };
+                                resolve(true);
+                            } else {
+                                LoginChecker.loginStatus['115'] = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            LoginChecker.loginStatus['115'] = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => {
+                        LoginChecker.loginStatus['115'] = { isLoggedIn: false };
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        // 检测迅雷云盘登录状态
+        checkXunlei: () => {
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://pan.xunlei.com/api/pan/user/info',
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.code === 0 && data.data) {
+                                LoginChecker.loginStatus.xunlei = {
+                                    isLoggedIn: true,
+                                    username: data.data.name || '已登录'
+                                };
+                                resolve(true);
+                            } else {
+                                LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => {
+                        LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        // 检测当前网盘的登录状态
+        checkCurrentDisk: async () => {
+            const currentDisk = Utils.getCurrentDisk();
+            if (!currentDisk) return null;
+
+            const checkers = {
+                'baidu': LoginChecker.checkBaidu,
+                'aliyun': LoginChecker.checkAliyun,
+                'quark': LoginChecker.checkQuark,
+                'tianyi': LoginChecker.checkTianyi,
+                '123pan': LoginChecker.check123pan,
+                '115': LoginChecker.check115,
+                'xunlei': LoginChecker.checkXunlei
+            };
+
+            if (checkers[currentDisk.type]) {
+                await checkers[currentDisk.type]();
+            }
+
+            return LoginChecker.loginStatus[currentDisk.type];
+        },
+
+        // 检测所有网盘登录状态
+        checkAllDisks: async () => {
+            await Promise.all([
+                LoginChecker.checkBaidu(),
+                LoginChecker.checkAliyun(),
+                LoginChecker.checkQuark(),
+                LoginChecker.checkTianyi(),
+                LoginChecker.check123pan(),
+                LoginChecker.check115(),
+                LoginChecker.checkXunlei()
+            ]);
+            return LoginChecker.loginStatus;
+        },
+
+        // 获取登录页面URL
+        getLoginUrl: (diskType) => {
+            const urls = {
+                'baidu': 'https://pan.baidu.com/',
+                'aliyun': 'https://www.alipan.com/',
+                'quark': 'https://pan.quark.cn/',
+                'tianyi': 'https://cloud.189.cn/',
+                '123pan': 'https://www.123pan.com/',
+                '115': 'https://115.com/',
+                'xunlei': 'https://pan.xunlei.com/',
+                'lanzou': 'https://lanzou.com/',
+                'hecaiyun': 'https://yun.139.com/',
+                'uc': 'https://drive.uc.cn/'
+            };
+            return urls[diskType] || '#';
         }
     };
 
@@ -653,23 +984,49 @@
     const DiskAPI = {
         // 百度网盘API
         baidu: {
-            // 获取分享文件列表
-            getShareFileList: async (shareId, pwd = '') => {
+            // 验证分享链接并获取文件列表
+            verifyShare: async (surl, pwd = '') => {
                 return new Promise((resolve, reject) => {
-                    const surl = shareId.startsWith('1') ? shareId : '1' + shareId;
+                    // 先验证提取码
                     GM_xmlhttpRequest({
                         method: 'POST',
-                        url: 'https://pan.baidu.com/share/wxlist?channel=weixin&version=2.2.2&clienttype=25&web=1',
+                        url: 'https://pan.baidu.com/share/verify?surl=' + surl + '&t=' + Date.now(),
                         headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            'Content-Type': 'application/x-www-form-urlencoded'
                         },
-                        data: `shorturl=${surl}&pwd=${pwd}&root=1`,
+                        data: 'pwd=' + pwd + '&vcode=&vcode_str=',
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.errno === 0) {
-                                    resolve(data.data.list || []);
+                                    resolve({ randsk: data.randsk });
+                                } else if (data.errno === -9) {
+                                    reject(new Error('提取码错误'));
+                                } else if (data.errno === -62) {
+                                    reject(new Error('分享链接已失效'));
+                                } else {
+                                    reject(new Error(data.show_msg || '验证失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 获取分享文件列表
+            getShareList: async (shareId, shareid, uk, randsk, dir = '/') => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://pan.baidu.com/share/list?shareid=${shareid}&uk=${uk}&root=1&dir=${encodeURIComponent(dir)}`,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.errno === 0) {
+                                    resolve(data.list || []);
                                 } else {
                                     reject(new Error(data.errmsg || '获取文件列表失败'));
                                 }
@@ -682,33 +1039,44 @@
                 });
             },
 
-            // 转存文件
-            saveShare: async (shareId, pwd, fileIds, targetPath = '/') => {
-                // 这里需要用户登录百度网盘后才能使用
+            // 转存文件到自己的网盘
+            saveShare: async (shareid, uk, fsidlist, path = '/') => {
+                const loginInfo = LoginChecker.loginStatus.baidu;
+                if (!loginInfo || !loginInfo.isLoggedIn) {
+                    throw new Error('请先登录百度网盘');
+                }
+
+                // 获取bdstoken
+                let bdstoken = loginInfo.bdstoken;
+                if (!bdstoken) {
+                    // 从页面获取
+                    const match = document.body.innerHTML.match(/"bdstoken"\s*:\s*"([^"]+)"/);
+                    bdstoken = match ? match[1] : '';
+                }
+
+                if (!bdstoken) {
+                    throw new Error('获取bdstoken失败，请刷新页面重试');
+                }
+
                 return new Promise((resolve, reject) => {
-                    // 获取bdstoken
-                    const bdstoken = document.querySelector('input[name="bdstoken"]')?.value ||
-                                    window.locals?.bdstoken || '';
-
-                    if (!bdstoken) {
-                        reject(new Error('请先登录百度网盘'));
-                        return;
-                    }
-
                     GM_xmlhttpRequest({
                         method: 'POST',
-                        url: `https://pan.baidu.com/share/transfer?shareid=${shareId}&from=&bdstoken=${bdstoken}&channel=chunlei&web=1&clienttype=0`,
+                        url: `https://pan.baidu.com/share/transfer?shareid=${shareid}&from=${uk}&bdstoken=${bdstoken}&channel=chunlei&web=1&clienttype=0`,
                         headers: {
                             'Content-Type': 'application/x-www-form-urlencoded'
                         },
-                        data: `fsidlist=${JSON.stringify(fileIds)}&path=${encodeURIComponent(targetPath)}`,
+                        data: `fsidlist=${JSON.stringify(fsidlist)}&path=${encodeURIComponent(path)}`,
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.errno === 0) {
-                                    resolve({ success: true, message: '转存成功' });
+                                    resolve({ success: true, message: '转存成功', extra: data.extra });
+                                } else if (data.errno === 12) {
+                                    resolve({ success: false, message: '文件已存在' });
+                                } else if (data.errno === -9) {
+                                    resolve({ success: false, message: '文件不存在或已被删除' });
                                 } else {
-                                    resolve({ success: false, message: data.errmsg || '转存失败' });
+                                    resolve({ success: false, message: data.show_msg || data.errmsg || '转存失败' });
                                 }
                             } catch (e) {
                                 reject(e);
@@ -722,6 +1090,7 @@
 
         // 阿里云盘API
         aliyun: {
+            // 获取分享信息
             getShareInfo: async (shareId) => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
@@ -748,6 +1117,7 @@
                 });
             },
 
+            // 获取share_token
             getShareToken: async (shareId, sharePwd = '') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
@@ -762,6 +1132,8 @@
                                 const data = JSON.parse(res.responseText);
                                 if (data.share_token) {
                                     resolve(data.share_token);
+                                } else if (data.code === 'ShareLinkTokenInvalid') {
+                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享令牌失败'));
                                 }
@@ -774,20 +1146,54 @@
                 });
             },
 
-            saveShare: async (shareId, shareToken, fileIds, toDriveId, toParentFileId = 'root') => {
-                const token = localStorage.getItem('token');
-                if (!token) {
+            // 获取分享文件列表
+            getShareFileList: async (shareId, shareToken, parentFileId = 'root') => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://api.aliyundrive.com/adrive/v2/file/list_by_share',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-share-token': shareToken
+                        },
+                        data: JSON.stringify({
+                            share_id: shareId,
+                            parent_file_id: parentFileId,
+                            limit: 100,
+                            order_by: 'name',
+                            order_direction: 'DESC'
+                        }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.items) {
+                                    resolve(data.items);
+                                } else {
+                                    reject(new Error(data.message || '获取文件列表失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 转存文件
+            saveShare: async (shareId, shareToken, fileIds, toParentFileId = 'root') => {
+                const loginInfo = LoginChecker.loginStatus.aliyun;
+                if (!loginInfo || !loginInfo.isLoggedIn) {
                     throw new Error('请先登录阿里云盘');
                 }
 
-                const tokenData = JSON.parse(token);
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'POST',
                         url: 'https://api.aliyundrive.com/adrive/v2/batch',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${tokenData.access_token}`,
+                            'Authorization': `Bearer ${loginInfo.accessToken}`,
                             'x-share-token': shareToken
                         },
                         data: JSON.stringify({
@@ -797,7 +1203,7 @@
                                     share_id: shareId,
                                     auto_rename: true,
                                     to_parent_file_id: toParentFileId,
-                                    to_drive_id: toDriveId
+                                    to_drive_id: loginInfo.driveId
                                 },
                                 headers: { 'Content-Type': 'application/json' },
                                 id: fileId,
@@ -809,7 +1215,16 @@
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
-                                resolve({ success: true, data });
+                                if (data.responses) {
+                                    const successCount = data.responses.filter(r => r.status === 201 || r.status === 200).length;
+                                    resolve({
+                                        success: successCount > 0,
+                                        message: `成功转存 ${successCount}/${fileIds.length} 个文件`,
+                                        data
+                                    });
+                                } else {
+                                    reject(new Error(data.message || '转存失败'));
+                                }
                             } catch (e) {
                                 reject(e);
                             }
@@ -822,23 +1237,88 @@
 
         // 夸克网盘API
         quark: {
-            getShareInfo: async (shareId, pwd = '') => {
+            // 获取分享token
+            getShareToken: async (pwdId, passcode = '') => {
                 return new Promise((resolve, reject) => {
-                    const url = `https://drive.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc&uc_param_str=&pwd_id=${shareId}&passcode=${pwd}`;
                     GM_xmlhttpRequest({
                         method: 'POST',
-                        url: url,
+                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc`,
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        data: JSON.stringify({}),
+                        data: JSON.stringify({ pwd_id: pwdId, passcode: passcode }),
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.status === 200 && data.data) {
                                     resolve(data.data);
+                                } else if (data.status === 400) {
+                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享信息失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 获取分享文件列表
+            getShareFileList: async (pwdId, stoken, pdir_fid = '0') => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/detail?pr=ucpro&fr=pc&pwd_id=${pwdId}&stoken=${encodeURIComponent(stoken)}&pdir_fid=${pdir_fid}&force=0&_fetch_share=1`,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.status === 200 && data.data) {
+                                    resolve(data.data.list || []);
+                                } else {
+                                    reject(new Error(data.message || '获取文件列表失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 转存文件
+            saveShare: async (pwdId, stoken, fids, toParentFid = '0') => {
+                const loginInfo = LoginChecker.loginStatus.quark;
+                if (!loginInfo || !loginInfo.isLoggedIn) {
+                    throw new Error('请先登录夸克网盘');
+                }
+
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc`,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        data: JSON.stringify({
+                            fid_list: fids,
+                            fid_token_list: fids.map(() => ''),
+                            to_pdir_fid: toParentFid,
+                            pwd_id: pwdId,
+                            stoken: stoken,
+                            pdir_fid: '0',
+                            scene: 'link'
+                        }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.status === 200) {
+                                    resolve({ success: true, message: '转存成功', data });
+                                } else {
+                                    resolve({ success: false, message: data.message || '转存失败' });
                                 }
                             } catch (e) {
                                 reject(e);
@@ -852,21 +1332,82 @@
 
         // 123云盘API
         pan123: {
-            getShareInfo: async (shareKey, pwd = '') => {
+            // 获取分享信息
+            getShareInfo: async (shareKey, sharePwd = '') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
-                        url: `https://www.123pan.com/api/share/info?shareKey=${shareKey}&sharePwd=${pwd}`,
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        url: `https://www.123pan.com/api/share/info?shareKey=${shareKey}&sharePwd=${sharePwd}`,
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.code === 0) {
                                     resolve(data.data);
+                                } else if (data.code === 4010) {
+                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享信息失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 获取分享文件列表
+            getShareFileList: async (shareKey, sharePwd = '', parentFileId = 0) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://www.123pan.com/api/share/get?shareKey=${shareKey}&sharePwd=${sharePwd}&parentFileId=${parentFileId}&limit=100`,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.code === 0) {
+                                    resolve(data.data.InfoList || []);
+                                } else {
+                                    reject(new Error(data.message || '获取文件列表失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 转存文件
+            saveShare: async (shareKey, sharePwd, fileIdList, parentFileId = 0) => {
+                const loginInfo = LoginChecker.loginStatus['123pan'];
+                if (!loginInfo || !loginInfo.isLoggedIn) {
+                    throw new Error('请先登录123云盘');
+                }
+
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://www.123pan.com/api/share/save',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${loginInfo.token}`
+                        },
+                        data: JSON.stringify({
+                            shareKey: shareKey,
+                            sharePwd: sharePwd,
+                            fileIdList: fileIdList,
+                            parentFileId: parentFileId
+                        }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.code === 0) {
+                                    resolve({ success: true, message: '转存成功' });
+                                } else {
+                                    resolve({ success: false, message: data.message || '转存失败' });
                                 }
                             } catch (e) {
                                 reject(e);
@@ -881,18 +1422,13 @@
 
     // ==================== UI组件 ====================
     const UI = {
-        // 显示Toast提示
         showToast: (message, type = 'info', duration = 3000) => {
-            const icons = {
-                success: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>',
-                error: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>',
-                info: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>',
-                warning: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>'
-            };
+            const existing = document.querySelector('.wr-toast');
+            if (existing) existing.remove();
 
             const toast = document.createElement('div');
             toast.className = `wr-toast wr-toast-${type}`;
-            toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
+            toast.innerHTML = `<span>${message}</span>`;
             document.body.appendChild(toast);
 
             setTimeout(() => {
@@ -901,8 +1437,11 @@
             }, duration);
         },
 
-        // 创建主面板
-        createPanel: () => {
+        createPanel: async () => {
+            // 先检测登录状态
+            UI.showToast('正在检测登录状态...', 'info', 2000);
+            await LoginChecker.checkCurrentDisk();
+
             const currentDisk = Utils.getCurrentDisk();
             const overlay = document.createElement('div');
             overlay.className = 'wr-overlay';
@@ -911,6 +1450,10 @@
             const panel = document.createElement('div');
             panel.className = 'wr-transfer-panel';
             panel.id = 'wr-main-panel';
+
+            // 当前网盘登录状态
+            const currentLoginStatus = currentDisk ? LoginChecker.loginStatus[currentDisk.type] : null;
+            const isLoggedIn = currentLoginStatus?.isLoggedIn;
 
             panel.innerHTML = `
                 <div class="wr-panel-header">
@@ -923,6 +1466,16 @@
                     <button class="wr-panel-close" id="wr-close-btn">&times;</button>
                 </div>
                 <div class="wr-panel-body">
+                    ${currentDisk ? `
+                        <div class="wr-login-status ${isLoggedIn ? 'logged-in' : 'logged-out'}">
+                            <span class="wr-login-dot ${isLoggedIn ? 'online' : 'offline'}"></span>
+                            <span class="wr-login-text">
+                                ${currentDisk.name}: ${isLoggedIn ? `已登录 (${currentLoginStatus.username})` : '未登录'}
+                            </span>
+                            ${!isLoggedIn ? `<button class="wr-login-btn" id="wr-login-btn">去登录</button>` : ''}
+                        </div>
+                    ` : ''}
+
                     <div class="wr-tabs">
                         <div class="wr-tab active" data-tab="transfer">转存文件</div>
                         <div class="wr-tab" data-tab="history">历史记录</div>
@@ -930,25 +1483,43 @@
                     </div>
 
                     <div class="wr-tab-content active" id="tab-transfer">
+                        ${!isLoggedIn && currentDisk ? `
+                            <div class="wr-tip-box">
+                                ⚠️ 请先登录${currentDisk.name}后再进行转存操作。
+                                <a href="${LoginChecker.getLoginUrl(currentDisk.type)}" target="_blank">点击登录</a>
+                            </div>
+                        ` : ''}
+
                         <div class="wr-section">
                             <div class="wr-section-title">分享链接</div>
                             <div class="wr-input-group">
                                 <input type="text" class="wr-input" id="wr-share-link" placeholder="请粘贴网盘分享链接">
                             </div>
                             <div class="wr-input-group">
-                                <input type="text" class="wr-input" id="wr-share-pwd" placeholder="提取码（如有）">
+                                <input type="text" class="wr-input" id="wr-share-pwd" placeholder="提取码（如有）" maxlength="6">
                             </div>
                         </div>
 
                         <div class="wr-section">
-                            <div class="wr-section-title">目标网盘</div>
+                            <div class="wr-section-title">文件列表 <span id="wr-file-count" style="font-weight: normal; color: #999;"></span></div>
+                            <button class="wr-btn wr-btn-primary" id="wr-fetch-btn" style="margin-bottom: 10px;">
+                                获取文件列表
+                            </button>
+                            <div class="wr-file-list" id="wr-file-list" style="display: none;"></div>
+                        </div>
+
+                        <div class="wr-section">
+                            <div class="wr-section-title">目标网盘 (当前: ${currentDisk?.name || '未知'})</div>
                             <div class="wr-disk-grid" id="wr-disk-grid">
                                 ${CONFIG.supportedDisks.map(disk => {
-                                    const isCurrentDisk = currentDisk && currentDisk.name === disk.name;
+                                    const diskLogin = LoginChecker.loginStatus[disk.type];
+                                    const diskLoggedIn = diskLogin?.isLoggedIn;
+                                    const isCurrentDisk = currentDisk && currentDisk.type === disk.type;
                                     return `
-                                        <div class="wr-disk-item ${isCurrentDisk ? 'selected' : ''}" data-disk="${disk.name}">
+                                        <div class="wr-disk-item ${isCurrentDisk ? 'selected' : ''} ${diskLoggedIn ? 'logged-in' : 'logged-out'}"
+                                             data-disk="${disk.type}" data-name="${disk.name}" title="${diskLoggedIn ? '已登录: ' + (diskLogin.username || '') : '未登录'}">
                                             <div class="wr-disk-icon" style="background: ${disk.color}">${disk.name[0]}</div>
-                                            <div class="wr-disk-name">${disk.name}</div>
+                                            <div class="wr-disk-name">${disk.name.replace('网盘', '').replace('云盘', '')}</div>
                                         </div>
                                     `;
                                 }).join('')}
@@ -957,12 +1528,12 @@
 
                         <div class="wr-section">
                             <div class="wr-input-group">
-                                <label class="wr-input-label">保存路径</label>
-                                <input type="text" class="wr-input" id="wr-target-path" value="/" placeholder="输入保存路径，默认为根目录">
+                                <label class="wr-input-label">保存路径 (默认: 根目录)</label>
+                                <input type="text" class="wr-input" id="wr-target-path" value="/" placeholder="输入保存路径">
                             </div>
                         </div>
 
-                        <button class="wr-btn wr-btn-primary" id="wr-transfer-btn">
+                        <button class="wr-btn wr-btn-primary" id="wr-transfer-btn" ${!isLoggedIn ? 'disabled' : ''}>
                             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                 <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                             </svg>
@@ -978,10 +1549,6 @@
                                 <span class="wr-status-label">耗时</span>
                                 <span class="wr-status-value" id="wr-time-text">0s</span>
                             </div>
-                            <div class="wr-status-row">
-                                <span class="wr-status-label">进度</span>
-                                <span class="wr-status-value" id="wr-progress-text">0%</span>
-                            </div>
                             <div class="wr-progress-bar">
                                 <div class="wr-progress-fill" id="wr-progress-fill" style="width: 0%"></div>
                             </div>
@@ -996,20 +1563,21 @@
 
                     <div class="wr-tab-content" id="tab-settings">
                         <div class="wr-section">
+                            <div class="wr-section-title">登录状态</div>
+                            <div id="wr-all-login-status">正在检测...</div>
+                        </div>
+                        <div class="wr-section">
                             <div class="wr-section-title">基本设置</div>
                             <div class="wr-input-group">
                                 <label class="wr-input-label">默认保存路径</label>
                                 <input type="text" class="wr-input" id="wr-default-path" value="${GM_getValue('default_path', '/')}" placeholder="输入默认保存路径">
                             </div>
-                            <div style="margin-top: 16px;">
-                                <button class="wr-btn wr-btn-primary" id="wr-save-settings">保存设置</button>
-                            </div>
+                            <button class="wr-btn wr-btn-primary" id="wr-save-settings" style="margin-top: 10px;">保存设置</button>
                         </div>
-                        <div class="wr-section" style="margin-top: 20px;">
+                        <div class="wr-section">
                             <div class="wr-section-title">关于</div>
                             <p style="color: #666; font-size: 13px; line-height: 1.8;">
                                 ${CONFIG.appName} v${CONFIG.version}<br>
-                                支持主流网盘之间的快速转存<br>
                                 作者：${CONFIG.author}
                             </p>
                         </div>
@@ -1023,17 +1591,43 @@
             document.body.appendChild(overlay);
             document.body.appendChild(panel);
 
-            // 绑定事件
             UI.bindPanelEvents();
+
+            // 异步检测所有网盘登录状态
+            LoginChecker.checkAllDisks().then(() => {
+                UI.updateAllLoginStatus();
+            });
         },
 
-        // 渲染历史记录
+        updateAllLoginStatus: () => {
+            const container = document.getElementById('wr-all-login-status');
+            if (!container) return;
+
+            const html = CONFIG.supportedDisks.map(disk => {
+                const status = LoginChecker.loginStatus[disk.type];
+                const isLoggedIn = status?.isLoggedIn;
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+                        <span style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${isLoggedIn ? '#4caf50' : '#ff9800'};"></span>
+                            ${disk.name}
+                        </span>
+                        <span style="color: ${isLoggedIn ? '#4caf50' : '#ff9800'}; font-size: 12px;">
+                            ${isLoggedIn ? `已登录 (${status.username || ''})` : '未登录'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
+        },
+
         renderHistory: () => {
             const history = Utils.getHistory();
             if (history.length === 0) {
                 return '<p style="text-align: center; color: #999; padding: 40px 0;">暂无转存记录</p>';
             }
-            return history.map(item => `
+            return history.slice(0, 20).map(item => `
                 <div class="wr-history-item">
                     <div class="wr-history-info">
                         <div class="wr-history-title">${item.fileName || '未知文件'}</div>
@@ -1048,10 +1642,19 @@
             `).join('');
         },
 
-        // 绑定面板事件
         bindPanelEvents: () => {
-            // 关闭按钮
             document.getElementById('wr-close-btn').onclick = UI.closePanel;
+
+            // 登录按钮
+            const loginBtn = document.getElementById('wr-login-btn');
+            if (loginBtn) {
+                loginBtn.onclick = () => {
+                    const currentDisk = Utils.getCurrentDisk();
+                    if (currentDisk) {
+                        window.location.reload();
+                    }
+                };
+            }
 
             // Tab切换
             document.querySelectorAll('.wr-tab').forEach(tab => {
@@ -1071,6 +1674,9 @@
                 };
             });
 
+            // 获取文件列表按钮
+            document.getElementById('wr-fetch-btn').onclick = TransferManager.fetchFileList;
+
             // 转存按钮
             document.getElementById('wr-transfer-btn').onclick = TransferManager.startTransfer;
 
@@ -1082,7 +1688,6 @@
             };
         },
 
-        // 关闭面板
         closePanel: () => {
             const panel = document.getElementById('wr-main-panel');
             const overlay = document.querySelector('.wr-overlay');
@@ -1090,31 +1695,48 @@
             if (overlay) overlay.remove();
         },
 
-        // 创建悬浮按钮
         createFloatButton: () => {
             const btn = document.createElement('button');
             btn.className = 'wr-float-btn';
             btn.id = 'wr-float-btn';
-            btn.innerHTML = `
-                <svg viewBox="0 0 24 24">
-                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                </svg>
-            `;
+            btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`;
             btn.title = CONFIG.appName;
             btn.onclick = UI.createPanel;
             document.body.appendChild(btn);
         },
 
-        // 更新进度
-        updateProgress: (percent, status, time) => {
+        updateProgress: (percent, status) => {
             const statusBar = document.getElementById('wr-status-bar');
             if (statusBar) {
                 statusBar.style.display = 'block';
                 document.getElementById('wr-status-text').textContent = status;
-                document.getElementById('wr-time-text').textContent = time;
-                document.getElementById('wr-progress-text').textContent = percent + '%';
                 document.getElementById('wr-progress-fill').style.width = percent + '%';
             }
+        },
+
+        renderFileList: (files) => {
+            const container = document.getElementById('wr-file-list');
+            const countEl = document.getElementById('wr-file-count');
+
+            if (!files || files.length === 0) {
+                container.style.display = 'none';
+                countEl.textContent = '';
+                return;
+            }
+
+            countEl.textContent = `(共 ${files.length} 个文件)`;
+            container.style.display = 'block';
+
+            container.innerHTML = files.map((file, index) => `
+                <div class="wr-file-item">
+                    <input type="checkbox" class="wr-file-checkbox" data-index="${index}" checked>
+                    <span class="wr-file-name" title="${file.name || file.server_filename || file.fileName}">${file.name || file.server_filename || file.fileName}</span>
+                    <span class="wr-file-size">${Utils.formatSize(file.size || file.Size || 0)}</span>
+                </div>
+            `).join('');
+
+            // 存储文件列表
+            TransferManager.fileList = files;
         }
     };
 
@@ -1122,6 +1744,65 @@
     const TransferManager = {
         startTime: 0,
         timer: null,
+        fileList: [],
+
+        fetchFileList: async () => {
+            const shareLink = document.getElementById('wr-share-link').value.trim();
+            const sharePwd = document.getElementById('wr-share-pwd').value.trim();
+
+            if (!shareLink) {
+                UI.showToast('请输入分享链接', 'warning');
+                return;
+            }
+
+            const shareInfo = Utils.parseShareLink(shareLink);
+            if (!shareInfo) {
+                UI.showToast('无法识别的分享链接', 'error');
+                return;
+            }
+
+            const fetchBtn = document.getElementById('wr-fetch-btn');
+            fetchBtn.disabled = true;
+            fetchBtn.innerHTML = '<div class="wr-spinner"></div> 获取中...';
+
+            try {
+                let files = [];
+
+                switch (shareInfo.type) {
+                    case 'aliyun':
+                        const shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+                        files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+                        TransferManager.shareToken = shareToken;
+                        break;
+
+                    case 'quark':
+                        const quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
+                        files = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
+                        TransferManager.quarkToken = quarkToken;
+                        break;
+
+                    case '123pan':
+                        await DiskAPI.pan123.getShareInfo(shareInfo.shareId, sharePwd);
+                        files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
+                        break;
+
+                    default:
+                        UI.showToast(`暂不支持获取${shareInfo.name}的文件列表，请直接转存`, 'info');
+                        return;
+                }
+
+                UI.renderFileList(files);
+                TransferManager.shareInfo = shareInfo;
+                TransferManager.sharePwd = sharePwd;
+                UI.showToast(`获取到 ${files.length} 个文件`, 'success');
+
+            } catch (error) {
+                UI.showToast('获取失败: ' + error.message, 'error');
+            } finally {
+                fetchBtn.disabled = false;
+                fetchBtn.innerHTML = '获取文件列表';
+            }
+        },
 
         startTransfer: async () => {
             const shareLink = document.getElementById('wr-share-link').value.trim();
@@ -1139,7 +1820,8 @@
                 return;
             }
 
-            const targetDiskName = selectedDisk.dataset.disk;
+            const targetDiskType = selectedDisk.dataset.disk;
+            const targetDiskName = selectedDisk.dataset.name;
             const shareInfo = Utils.parseShareLink(shareLink);
 
             if (!shareInfo) {
@@ -1147,40 +1829,109 @@
                 return;
             }
 
+            // 检查目标网盘登录状态
+            const targetLoginInfo = LoginChecker.loginStatus[targetDiskType];
+            if (!targetLoginInfo || !targetLoginInfo.isLoggedIn) {
+                UI.showToast(`请先登录${targetDiskName}`, 'error');
+                window.open(LoginChecker.getLoginUrl(targetDiskType), '_blank');
+                return;
+            }
+
             // 开始计时
             TransferManager.startTime = Date.now();
             TransferManager.timer = setInterval(() => {
                 const elapsed = Date.now() - TransferManager.startTime;
-                document.getElementById('wr-time-text').textContent = Utils.formatTime(elapsed);
+                const timeEl = document.getElementById('wr-time-text');
+                if (timeEl) timeEl.textContent = Utils.formatTime(elapsed);
             }, 100);
 
             const transferBtn = document.getElementById('wr-transfer-btn');
             transferBtn.disabled = true;
             transferBtn.innerHTML = '<div class="wr-spinner"></div> 转存中...';
 
-            UI.updateProgress(0, '正在获取分享信息...', '0s');
+            UI.updateProgress(0, '正在准备转存...');
 
             try {
-                // 根据源网盘类型获取文件列表
-                UI.updateProgress(20, '正在解析分享链接...', Utils.formatTime(Date.now() - TransferManager.startTime));
-
                 let result;
 
-                // 模拟转存过程（实际需要根据不同网盘调用对应API）
-                await new Promise(resolve => setTimeout(resolve, 500));
-                UI.updateProgress(40, '正在获取文件列表...', Utils.formatTime(Date.now() - TransferManager.startTime));
+                // 根据源网盘和目标网盘类型执行转存
+                UI.updateProgress(20, '正在获取分享信息...');
 
-                await new Promise(resolve => setTimeout(resolve, 500));
-                UI.updateProgress(60, '正在执行转存...', Utils.formatTime(Date.now() - TransferManager.startTime));
+                switch (shareInfo.type) {
+                    case 'aliyun':
+                        // 阿里云盘转存
+                        let shareToken = TransferManager.shareToken;
+                        if (!shareToken) {
+                            shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+                        }
 
-                await new Promise(resolve => setTimeout(resolve, 500));
-                UI.updateProgress(80, '正在验证文件...', Utils.formatTime(Date.now() - TransferManager.startTime));
+                        UI.updateProgress(40, '正在获取文件列表...');
+                        let files = TransferManager.fileList;
+                        if (!files || files.length === 0) {
+                            files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+                        }
 
-                await new Promise(resolve => setTimeout(resolve, 500));
-                UI.updateProgress(100, '转存完成！', Utils.formatTime(Date.now() - TransferManager.startTime));
+                        // 获取选中的文件
+                        const selectedFiles = UI.getSelectedFiles(files);
+                        if (selectedFiles.length === 0) {
+                            throw new Error('请选择要转存的文件');
+                        }
 
-                // 记录历史
+                        UI.updateProgress(60, '正在执行转存...');
+                        const fileIds = selectedFiles.map(f => f.file_id);
+                        result = await DiskAPI.aliyun.saveShare(shareInfo.shareId, shareToken, fileIds);
+                        break;
+
+                    case 'quark':
+                        // 夸克网盘转存
+                        let quarkToken = TransferManager.quarkToken;
+                        if (!quarkToken) {
+                            quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
+                        }
+
+                        UI.updateProgress(40, '正在获取文件列表...');
+                        let quarkFiles = TransferManager.fileList;
+                        if (!quarkFiles || quarkFiles.length === 0) {
+                            quarkFiles = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
+                        }
+
+                        const selectedQuarkFiles = UI.getSelectedFiles(quarkFiles);
+                        if (selectedQuarkFiles.length === 0) {
+                            throw new Error('请选择要转存的文件');
+                        }
+
+                        UI.updateProgress(60, '正在执行转存...');
+                        const fids = selectedQuarkFiles.map(f => f.fid);
+                        result = await DiskAPI.quark.saveShare(shareInfo.shareId, quarkToken.stoken, fids);
+                        break;
+
+                    case '123pan':
+                        // 123云盘转存
+                        UI.updateProgress(40, '正在获取文件列表...');
+                        let pan123Files = TransferManager.fileList;
+                        if (!pan123Files || pan123Files.length === 0) {
+                            pan123Files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
+                        }
+
+                        const selected123Files = UI.getSelectedFiles(pan123Files);
+                        if (selected123Files.length === 0) {
+                            throw new Error('请选择要转存的文件');
+                        }
+
+                        UI.updateProgress(60, '正在执行转存...');
+                        const fileIdList = selected123Files.map(f => f.FileId);
+                        result = await DiskAPI.pan123.saveShare(shareInfo.shareId, sharePwd, fileIdList);
+                        break;
+
+                    default:
+                        throw new Error(`暂不支持从${shareInfo.name}转存，请等待后续更新`);
+                }
+
+                UI.updateProgress(100, '转存完成！');
+
                 const duration = Utils.formatTime(Date.now() - TransferManager.startTime);
+                clearInterval(TransferManager.timer);
+
                 Utils.saveHistory({
                     id: Utils.generateId(),
                     fileName: shareInfo.shareId,
@@ -1189,25 +1940,24 @@
                     targetPath: targetPath,
                     time: new Date().toLocaleString(),
                     duration: duration,
-                    success: true
+                    success: result.success
                 });
 
-                // 显示成功提示
-                clearInterval(TransferManager.timer);
-                UI.showToast(`转存成功！耗时: ${duration}`, 'success', 5000);
-
-                // 发送系统通知
-                GM_notification({
-                    title: CONFIG.appName,
-                    text: `文件转存成功！\n来源: ${shareInfo.name}\n目标: ${targetDiskName}\n耗时: ${duration}`,
-                    timeout: 5000
-                });
+                if (result.success) {
+                    UI.showToast(`转存成功！${result.message || ''} 耗时: ${duration}`, 'success', 5000);
+                    GM_notification({
+                        title: CONFIG.appName,
+                        text: `文件转存成功！\n来源: ${shareInfo.name}\n目标: ${targetDiskName}\n耗时: ${duration}`,
+                        timeout: 5000
+                    });
+                } else {
+                    UI.showToast(`转存失败: ${result.message}`, 'error', 5000);
+                }
 
             } catch (error) {
-                console.error('Transfer error:', error);
                 clearInterval(TransferManager.timer);
-
                 const duration = Utils.formatTime(Date.now() - TransferManager.startTime);
+
                 Utils.saveHistory({
                     id: Utils.generateId(),
                     fileName: shareInfo?.shareId || '未知',
@@ -1220,14 +1970,9 @@
                     error: error.message
                 });
 
-                UI.updateProgress(0, `转存失败: ${error.message}`, duration);
+                UI.updateProgress(0, `转存失败: ${error.message}`);
                 UI.showToast(`转存失败: ${error.message}`, 'error', 5000);
 
-                GM_notification({
-                    title: CONFIG.appName,
-                    text: `文件转存失败！\n错误: ${error.message}`,
-                    timeout: 5000
-                });
             } finally {
                 transferBtn.disabled = false;
                 transferBtn.innerHTML = `
@@ -1240,33 +1985,43 @@
         }
     };
 
+    // 获取选中的文件
+    UI.getSelectedFiles = (files) => {
+        const checkboxes = document.querySelectorAll('.wr-file-checkbox:checked');
+        if (checkboxes.length === 0) return files; // 如果没有复选框或全选，返回所有文件
+
+        const selectedIndexes = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+        return files.filter((_, index) => selectedIndexes.includes(index));
+    };
+
     // ==================== 初始化 ====================
-    const init = () => {
-        // 注入样式
+    const init = async () => {
         GM_addStyle(STYLES);
 
-        // 检测当前网盘
         const currentDisk = Utils.getCurrentDisk();
         if (currentDisk) {
             console.log(`${CONFIG.appName}: 检测到 ${currentDisk.name}`);
+            // 自动检测登录状态
+            await LoginChecker.checkCurrentDisk();
         }
 
-        // 创建悬浮按钮
         UI.createFloatButton();
 
-        // 注册菜单命令
         GM_registerMenuCommand('打开转存面板', UI.createPanel);
-        GM_registerMenuCommand('查看历史记录', () => {
-            UI.createPanel();
-            setTimeout(() => {
-                document.querySelector('.wr-tab[data-tab="history"]').click();
-            }, 100);
+        GM_registerMenuCommand('检测登录状态', async () => {
+            UI.showToast('正在检测登录状态...', 'info');
+            await LoginChecker.checkAllDisks();
+            const currentStatus = LoginChecker.loginStatus[currentDisk?.type];
+            if (currentStatus?.isLoggedIn) {
+                UI.showToast(`${currentDisk.name} 已登录: ${currentStatus.username}`, 'success');
+            } else {
+                UI.showToast(`${currentDisk?.name || '当前网盘'} 未登录`, 'warning');
+            }
         });
 
         console.log(`${CONFIG.appName} v${CONFIG.version} 已加载`);
     };
 
-    // 页面加载完成后初始化
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
