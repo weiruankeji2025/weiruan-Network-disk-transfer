@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>威软网盘转存工具</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                <span>威软网盘转存工具</span>
+            </div>
+            <div class="version">v1.0.0</div>
+        </header>
+
+        <!-- 标签页 -->
+        <div class="tabs">
+            <button class="tab active" data-tab="transfer">转存</button>
+            <button class="tab" data-tab="history">历史</button>
+            <button class="tab" data-tab="settings">设置</button>
+        </div>
+
+        <!-- 转存面板 -->
+        <div class="tab-content active" id="transfer">
+            <div class="section">
+                <label class="label">分享链接</label>
+                <input type="text" class="input" id="shareLink" placeholder="粘贴网盘分享链接">
+                <button class="btn-paste" id="pasteBtn" title="从剪贴板粘贴">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                        <path d="M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="section">
+                <label class="label">提取码（如有）</label>
+                <input type="text" class="input" id="sharePwd" placeholder="输入提取码" maxlength="6">
+            </div>
+
+            <div class="section">
+                <label class="label">源网盘</label>
+                <div class="detected-disk" id="sourceDisk">
+                    <span class="disk-icon">?</span>
+                    <span class="disk-name">自动检测</span>
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="label">目标网盘</label>
+                <div class="disk-grid" id="diskGrid">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="label">保存路径</label>
+                <input type="text" class="input" id="targetPath" value="/" placeholder="输入保存路径">
+            </div>
+
+            <button class="btn-primary" id="transferBtn">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                <span>开始转存</span>
+            </button>
+
+            <!-- 状态栏 -->
+            <div class="status-bar" id="statusBar" style="display: none;">
+                <div class="status-row">
+                    <span class="status-label">状态</span>
+                    <span class="status-value" id="statusText">准备中...</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">耗时</span>
+                    <span class="status-value" id="timeText">0s</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="tab-content" id="history">
+            <div class="history-list" id="historyList">
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" width="48" height="48" fill="#ccc">
+                        <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+                    </svg>
+                    <p>暂无转存记录</p>
+                </div>
+            </div>
+            <button class="btn-secondary" id="clearHistory" style="display: none;">清空历史</button>
+        </div>
+
+        <!-- 设置 -->
+        <div class="tab-content" id="settings">
+            <div class="section">
+                <label class="label">默认保存路径</label>
+                <input type="text" class="input" id="defaultPath" value="/" placeholder="输入默认保存路径">
+            </div>
+
+            <div class="section">
+                <label class="label">通知设置</label>
+                <div class="toggle-row">
+                    <span>转存完成时通知</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="notifyComplete" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-row">
+                    <span>转存失败时通知</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="notifyError" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn-primary" id="saveSettings">保存设置</button>
+
+            <div class="about">
+                <h3>关于</h3>
+                <p><strong>威软网盘转存工具</strong> v1.0.0</p>
+                <p>支持主流网盘之间的快速转存</p>
+                <p class="copyright">Powered by 威软网盘转存工具</p>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="footer">
+            <span>威软网盘转存工具 v1.0.0</span>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

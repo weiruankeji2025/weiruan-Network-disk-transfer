@@ -1,0 +1,83 @@
+{
+  "manifest_version": 3,
+  "name": "威软网盘转存工具",
+  "version": "1.0.0",
+  "description": "网盘高速互相转存工具 - 支持百度网盘、阿里云盘、天翼云盘、夸克网盘、迅雷云盘、115网盘、蓝奏云、和彩云、123云盘等主流网盘",
+  "author": "威软网盘转存工具",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "威软网盘转存工具"
+  },
+  "permissions": [
+    "storage",
+    "notifications",
+    "activeTab",
+    "tabs",
+    "clipboardWrite",
+    "clipboardRead"
+  ],
+  "host_permissions": [
+    "*://pan.baidu.com/*",
+    "*://yun.baidu.com/*",
+    "*://www.aliyundrive.com/*",
+    "*://www.alipan.com/*",
+    "*://cloud.189.cn/*",
+    "*://pan.quark.cn/*",
+    "*://pan.xunlei.com/*",
+    "*://115.com/*",
+    "*://*.lanzou.com/*",
+    "*://*.lanzoui.com/*",
+    "*://*.lanzoux.com/*",
+    "*://*.lanzouq.com/*",
+    "*://yun.139.com/*",
+    "*://www.123pan.com/*",
+    "*://www.123865.com/*",
+    "*://drive.uc.cn/*"
+  ],
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://pan.baidu.com/*",
+        "*://yun.baidu.com/*",
+        "*://www.aliyundrive.com/*",
+        "*://www.alipan.com/*",
+        "*://cloud.189.cn/*",
+        "*://pan.quark.cn/*",
+        "*://pan.xunlei.com/*",
+        "*://115.com/*",
+        "*://*.lanzou.com/*",
+        "*://*.lanzoui.com/*",
+        "*://*.lanzoux.com/*",
+        "*://*.lanzouq.com/*",
+        "*://yun.139.com/*",
+        "*://www.123pan.com/*",
+        "*://www.123865.com/*",
+        "*://drive.uc.cn/*"
+      ],
+      "js": ["js/content.js"],
+      "css": ["css/content.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "css/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
