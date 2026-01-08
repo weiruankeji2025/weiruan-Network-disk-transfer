@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         威软网盘转存工具
 // @namespace    https://github.com/weiruankeji2025/weiruan-Network-disk-transfer
-// @version      1.1.0
-// @description  网盘高速互相转存工具 - 支持百度网盘、阿里云盘、天翼云盘、夸克网盘、迅雷云盘、115网盘、蓝奏云、和彩云、123云盘等主流网盘
+// @version      1.2.0
+// @description  网盘高速互相转存工具 - 支持登录各网盘后真实转存
 // @author       威软网盘转存工具
 // @match        *://pan.baidu.com/*
 // @match        *://yun.baidu.com/*
@@ -20,22 +20,31 @@
 // @match        *://www.123pan.com/*
 // @match        *://www.123865.com/*
 // @match        *://drive.uc.cn/*
+// @match        *://*/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=baidu.com
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_deleteValue
 // @grant        GM_notification
 // @grant        GM_setClipboard
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @grant        GM_cookie
+// @grant        GM_openInTab
 // @connect      pan.baidu.com
+// @connect      passport.baidu.com
 // @connect      api.aliyundrive.com
 // @connect      api.alipan.com
+// @connect      auth.alipan.com
 // @connect      cloud.189.cn
+// @connect      open.e.189.cn
 // @connect      drive.quark.cn
+// @connect      uop.quark.cn
 // @connect      pan.xunlei.com
+// @connect      xluser-ssl.xunlei.com
 // @connect      115.com
+// @connect      passportapi.115.com
 // @connect      lanzou.com
 // @connect      yun.139.com
 // @connect      www.123pan.com
@@ -51,7 +60,7 @@
     // ==================== 配置信息 ====================
     const CONFIG = {
         appName: '威软网盘转存工具',
-        version: '1.1.0',
+        version: '1.2.0',
         author: '威软网盘转存工具',
         supportedDisks: [
             { name: '百度网盘', domain: ['pan.baidu.com', 'yun.baidu.com'], color: '#06a7ff', type: 'baidu' },
@@ -79,8 +88,8 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            min-width: 480px;
-            max-width: 520px;
+            min-width: 520px;
+            max-width: 580px;
             overflow: hidden;
             animation: wr-fadeIn 0.3s ease-out;
         }
@@ -164,45 +173,79 @@
             border-radius: 2px;
         }
 
-        .wr-login-status {
+        .wr-account-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .wr-account-card {
+            border: 2px solid #e8e8e8;
+            border-radius: 12px;
+            padding: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+
+        .wr-account-card:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .wr-account-card.logged-in {
+            border-color: #4caf50;
+            background: #e8f5e9;
+        }
+
+        .wr-account-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 12px 16px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            margin-bottom: 16px;
+            gap: 10px;
+            margin-bottom: 8px;
         }
 
-        .wr-login-status.logged-in {
-            background: #e8f5e9;
-            border: 1px solid #a5d6a7;
+        .wr-account-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
         }
 
-        .wr-login-status.logged-out {
-            background: #fff3e0;
-            border: 1px solid #ffcc80;
-        }
-
-        .wr-login-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-
-        .wr-login-dot.online { background: #4caf50; }
-        .wr-login-dot.offline { background: #ff9800; }
-
-        .wr-login-text {
+        .wr-account-info {
             flex: 1;
-            font-size: 13px;
+        }
+
+        .wr-account-name {
+            font-size: 14px;
+            font-weight: 600;
             color: #333;
         }
 
-        .wr-login-btn {
-            padding: 6px 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #fff;
+        .wr-account-status {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .wr-account-status.online {
+            color: #4caf50;
+        }
+
+        .wr-account-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .wr-account-btn {
+            flex: 1;
+            padding: 8px 12px;
             border: none;
             border-radius: 6px;
             font-size: 12px;
@@ -210,90 +253,118 @@
             transition: all 0.2s;
         }
 
-        .wr-login-btn:hover {
-            transform: scale(1.05);
-        }
-
-        .wr-disk-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 8px;
-        }
-
-        .wr-disk-item {
-            padding: 10px 6px;
-            border: 2px solid #e8e8e8;
-            border-radius: 10px;
-            cursor: pointer;
-            text-align: center;
-            transition: all 0.2s;
-            background: #fafafa;
-            position: relative;
-        }
-
-        .wr-disk-item:hover {
-            border-color: #667eea;
-            background: #f0f4ff;
-            transform: translateY(-2px);
-        }
-
-        .wr-disk-item.selected {
-            border-color: #667eea;
-            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-        }
-
-        .wr-disk-item.logged-in::after {
-            content: '✓';
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 16px;
-            height: 16px;
-            background: #4caf50;
+        .wr-account-btn.login {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #fff;
-            border-radius: 50%;
-            font-size: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
-        .wr-disk-item.logged-out::after {
-            content: '!';
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 16px;
-            height: 16px;
-            background: #ff9800;
+        .wr-account-btn.logout {
+            background: #ff5722;
             color: #fff;
-            border-radius: 50%;
-            font-size: 10px;
-            font-weight: bold;
+        }
+
+        .wr-account-btn:hover {
+            transform: scale(1.02);
+        }
+
+        .wr-login-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            z-index: 9999999;
+            width: 400px;
+            overflow: hidden;
+        }
+
+        .wr-login-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 16px 20px;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
         }
 
-        .wr-disk-name {
-            font-size: 11px;
-            color: #333;
-            font-weight: 500;
-            margin-top: 6px;
+        .wr-login-title {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
         }
 
-        .wr-disk-icon {
+        .wr-login-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: #fff;
             width: 28px;
             height: 28px;
-            margin: 0 auto;
-            border-radius: 6px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .wr-login-body {
+            padding: 24px;
+        }
+
+        .wr-login-tabs {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: bold;
-            color: #fff;
+            border-bottom: 2px solid #e8e8e8;
+            margin-bottom: 20px;
+        }
+
+        .wr-login-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            color: #666;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .wr-login-tab:hover { color: #667eea; }
+
+        .wr-login-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .wr-login-content {
+            display: none;
+        }
+
+        .wr-login-content.active {
+            display: block;
+        }
+
+        .wr-qrcode-container {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .wr-qrcode-img {
+            width: 200px;
+            height: 200px;
+            border: 1px solid #e8e8e8;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .wr-qrcode-tip {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .wr-qrcode-refresh {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-left: 8px;
         }
 
         .wr-input-group { margin-bottom: 16px; }
@@ -353,6 +424,71 @@
             box-shadow: none;
         }
 
+        .wr-disk-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+        }
+
+        .wr-disk-item {
+            padding: 10px 6px;
+            border: 2px solid #e8e8e8;
+            border-radius: 10px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            background: #fafafa;
+            position: relative;
+        }
+
+        .wr-disk-item:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+            transform: translateY(-2px);
+        }
+
+        .wr-disk-item.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .wr-disk-item.logged-in::after {
+            content: '✓';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 16px;
+            height: 16px;
+            background: #4caf50;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wr-disk-name {
+            font-size: 11px;
+            color: #333;
+            font-weight: 500;
+            margin-top: 6px;
+        }
+
+        .wr-disk-icon {
+            width: 28px;
+            height: 28px;
+            margin: 0 auto;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #fff;
+        }
+
         .wr-status-bar {
             background: #f8f9fa;
             border-radius: 10px;
@@ -404,7 +540,7 @@
             color: #fff;
             font-size: 14px;
             font-weight: 500;
-            z-index: 9999999;
+            z-index: 99999999;
             animation: wr-slideIn 0.3s ease-out;
             display: flex;
             align-items: center;
@@ -545,48 +681,33 @@
         .wr-tab-content { display: none; }
         .wr-tab-content.active { display: block; }
 
-        .wr-history-item {
+        .wr-cookie-input {
+            width: 100%;
+            height: 80px;
             padding: 12px;
-            border: 1px solid #e8e8e8;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border: 2px solid #e8e8e8;
+            border-radius: 10px;
+            font-size: 13px;
+            resize: vertical;
+            box-sizing: border-box;
         }
 
-        .wr-history-info { flex: 1; }
-
-        .wr-history-title {
-            font-size: 14px;
-            color: #333;
-            font-weight: 500;
-        }
-
-        .wr-history-meta {
-            font-size: 12px;
-            color: #999;
-            margin-top: 4px;
-        }
-
-        .wr-history-status {
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .wr-history-status.success {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .wr-history-status.failed {
-            background: #ffebee;
-            color: #c62828;
+        .wr-cookie-input:focus {
+            outline: none;
+            border-color: #667eea;
         }
 
         .wr-tip-box {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #1565c0;
+        }
+
+        .wr-warning-box {
             background: #fff3e0;
             border: 1px solid #ffcc80;
             border-radius: 8px;
@@ -596,9 +717,25 @@
             color: #e65100;
         }
 
-        .wr-tip-box a {
-            color: #667eea;
-            text-decoration: underline;
+        .wr-step-list {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        .wr-step-list li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+
+        .wr-token-display {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            font-size: 12px;
+            word-break: break-all;
+            max-height: 100px;
+            overflow-y: auto;
         }
     `;
 
@@ -674,156 +811,311 @@
         }
     };
 
-    // ==================== 登录检测模块 ====================
-    const LoginChecker = {
-        // 存储登录状态
-        loginStatus: {},
+    // ==================== 账号凭证管理 ====================
+    const CredentialManager = {
+        // 保存凭证
+        save: (diskType, credentials) => {
+            const allCreds = GM_getValue('disk_credentials', {});
+            allCreds[diskType] = {
+                ...credentials,
+                savedAt: Date.now()
+            };
+            GM_setValue('disk_credentials', allCreds);
+        },
 
-        // 检测百度网盘登录状态
-        checkBaidu: () => {
-            return new Promise((resolve) => {
-                // 方法1: 检查页面上的用户信息
-                const bdstoken = document.querySelector('input[name="bdstoken"]')?.value ||
-                                (typeof window.locals !== 'undefined' ? window.locals.bdstoken : null);
+        // 获取凭证
+        get: (diskType) => {
+            const allCreds = GM_getValue('disk_credentials', {});
+            return allCreds[diskType] || null;
+        },
 
-                if (bdstoken) {
-                    LoginChecker.loginStatus.baidu = {
-                        isLoggedIn: true,
-                        bdstoken: bdstoken,
-                        username: document.querySelector('.user-name')?.textContent || '已登录'
-                    };
-                    resolve(true);
-                    return;
-                }
+        // 删除凭证
+        remove: (diskType) => {
+            const allCreds = GM_getValue('disk_credentials', {});
+            delete allCreds[diskType];
+            GM_setValue('disk_credentials', allCreds);
+        },
 
-                // 方法2: 通过API检测
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: 'https://pan.baidu.com/api/loginStatus?clienttype=0&web=1',
-                    onload: (res) => {
-                        try {
-                            const data = JSON.parse(res.responseText);
-                            if (data.errno === 0 && data.login_info) {
-                                LoginChecker.loginStatus.baidu = {
-                                    isLoggedIn: true,
-                                    username: data.login_info.username || '已登录',
-                                    uk: data.login_info.uk
-                                };
-                                resolve(true);
-                            } else {
-                                LoginChecker.loginStatus.baidu = { isLoggedIn: false };
-                                resolve(false);
+        // 获取所有凭证
+        getAll: () => {
+            return GM_getValue('disk_credentials', {});
+        },
+
+        // 检查凭证是否有效（简单检查）
+        isValid: (diskType) => {
+            const cred = CredentialManager.get(diskType);
+            if (!cred) return false;
+
+            // 检查是否过期（默认7天有效期）
+            const expireTime = cred.expireTime || (cred.savedAt + 7 * 24 * 60 * 60 * 1000);
+            return Date.now() < expireTime;
+        }
+    };
+
+    // ==================== 网盘登录模块 ====================
+    const DiskLogin = {
+        // 百度网盘登录
+        baidu: {
+            // 获取登录二维码
+            getQRCode: () => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://passport.baidu.com/v2/api/getqrcode?lp=pc&qrloginfrom=pc&gid=${Utils.generateId()}&callback=callback&apiver=v3&tt=${Date.now()}&tpl=netdisk`,
+                        onload: (res) => {
+                            try {
+                                const jsonStr = res.responseText.replace(/^callback\(/, '').replace(/\)$/, '');
+                                const data = JSON.parse(jsonStr);
+                                if (data.imgurl) {
+                                    resolve({
+                                        imgUrl: 'https://' + data.imgurl,
+                                        sign: data.sign,
+                                        uuid: data.sign // 使用sign作为uuid
+                                    });
+                                } else {
+                                    reject(new Error('获取二维码失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
                             }
-                        } catch (e) {
-                            LoginChecker.loginStatus.baidu = { isLoggedIn: false };
-                            resolve(false);
-                        }
-                    },
-                    onerror: () => {
-                        LoginChecker.loginStatus.baidu = { isLoggedIn: false };
-                        resolve(false);
-                    }
+                        },
+                        onerror: reject
+                    });
                 });
-            });
-        },
+            },
 
-        // 检测阿里云盘登录状态
-        checkAliyun: () => {
-            return new Promise((resolve) => {
-                try {
-                    const token = localStorage.getItem('token');
-                    if (token) {
-                        const tokenData = JSON.parse(token);
-                        if (tokenData.access_token && tokenData.expire_time > Date.now()) {
-                            LoginChecker.loginStatus.aliyun = {
-                                isLoggedIn: true,
-                                accessToken: tokenData.access_token,
-                                refreshToken: tokenData.refresh_token,
-                                driveId: tokenData.default_drive_id,
-                                username: tokenData.nick_name || tokenData.user_name || '已登录'
-                            };
-                            resolve(true);
-                            return;
-                        }
-                    }
-                } catch (e) {}
-
-                LoginChecker.loginStatus.aliyun = { isLoggedIn: false };
-                resolve(false);
-            });
-        },
-
-        // 检测夸克网盘登录状态
-        checkQuark: () => {
-            return new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: 'https://drive.quark.cn/1/clouddrive/member/info?pr=ucpro&fr=pc',
-                    onload: (res) => {
-                        try {
-                            const data = JSON.parse(res.responseText);
-                            if (data.status === 200 && data.data) {
-                                LoginChecker.loginStatus.quark = {
-                                    isLoggedIn: true,
-                                    username: data.data.nickname || '已登录',
-                                    memberId: data.data.member_id
-                                };
-                                resolve(true);
-                            } else {
-                                LoginChecker.loginStatus.quark = { isLoggedIn: false };
-                                resolve(false);
+            // 检查扫码状态
+            checkQRStatus: (sign) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: `https://passport.baidu.com/channel/unicast?channel_id=${sign}&callback=callback&tpl=netdisk&apiver=v3&tt=${Date.now()}`,
+                        onload: (res) => {
+                            try {
+                                const jsonStr = res.responseText.replace(/^callback\(/, '').replace(/\)$/, '');
+                                const data = JSON.parse(jsonStr);
+                                resolve(data);
+                            } catch (e) {
+                                reject(e);
                             }
-                        } catch (e) {
-                            LoginChecker.loginStatus.quark = { isLoggedIn: false };
-                            resolve(false);
-                        }
-                    },
-                    onerror: () => {
-                        LoginChecker.loginStatus.quark = { isLoggedIn: false };
-                        resolve(false);
-                    }
+                        },
+                        onerror: reject
+                    });
                 });
-            });
-        },
+            },
 
-        // 检测天翼云盘登录状态
-        checkTianyi: () => {
-            return new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: 'https://cloud.189.cn/api/portal/getUserBriefInfo.action',
-                    onload: (res) => {
-                        try {
-                            const data = JSON.parse(res.responseText);
-                            if (data.res_code === 0) {
-                                LoginChecker.loginStatus.tianyi = {
-                                    isLoggedIn: true,
-                                    username: data.nickName || '已登录',
-                                    userId: data.userId
-                                };
-                                resolve(true);
-                            } else {
-                                LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
-                                resolve(false);
+            // 使用Cookie登录
+            loginWithCookie: async (cookie) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://pan.baidu.com/api/loginStatus?clienttype=0&web=1',
+                        headers: {
+                            'Cookie': cookie
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.errno === 0 && data.login_info) {
+                                    CredentialManager.save('baidu', {
+                                        cookie: cookie,
+                                        username: data.login_info.username,
+                                        uk: data.login_info.uk,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.login_info.username
+                                    });
+                                } else {
+                                    reject(new Error('Cookie无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
                             }
-                        } catch (e) {
-                            LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
-                            resolve(false);
-                        }
-                    },
-                    onerror: () => {
-                        LoginChecker.loginStatus.tianyi = { isLoggedIn: false };
-                        resolve(false);
-                    }
+                        },
+                        onerror: reject
+                    });
                 });
-            });
+            }
         },
 
-        // 检测123云盘登录状态
-        check123pan: () => {
-            return new Promise((resolve) => {
-                const token = localStorage.getItem('authorToken') || Utils.getCookie('authorToken');
-                if (token) {
+        // 阿里云盘登录
+        aliyun: {
+            // 获取登录二维码
+            getQRCode: () => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://passport.aliyundrive.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&isMobile=false&lang=zh_CN&returnUrl=&bizParams=&_bx-v=2.0.31',
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.content && data.content.data) {
+                                    resolve({
+                                        imgUrl: data.content.data.codeContent,
+                                        ck: data.content.data.ck,
+                                        t: data.content.data.t
+                                    });
+                                } else {
+                                    reject(new Error('获取二维码失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 使用RefreshToken登录
+            loginWithToken: async (refreshToken) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://api.aliyundrive.com/token/refresh',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        data: JSON.stringify({ refresh_token: refreshToken }),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.access_token) {
+                                    CredentialManager.save('aliyun', {
+                                        accessToken: data.access_token,
+                                        refreshToken: data.refresh_token,
+                                        driveId: data.default_drive_id,
+                                        username: data.nick_name || data.user_name,
+                                        userId: data.user_id,
+                                        expireTime: Date.now() + (data.expires_in || 7200) * 1000,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.nick_name || data.user_name
+                                    });
+                                } else {
+                                    reject(new Error(data.message || 'Token无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
+        },
+
+        // 夸克网盘登录
+        quark: {
+            // 获取登录二维码
+            getQRCode: () => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin?client_id=532&v=1.2&request_id=' + Date.now(),
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.status === 200 && data.data) {
+                                    resolve({
+                                        imgUrl: `https://uop.quark.cn/cas/qrcode?token=${data.data.members.token}&client_id=532`,
+                                        token: data.data.members.token
+                                    });
+                                } else {
+                                    reject(new Error('获取二维码失败'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            },
+
+            // 使用Cookie登录
+            loginWithCookie: async (cookie) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://drive.quark.cn/1/clouddrive/member/info?pr=ucpro&fr=pc',
+                        headers: {
+                            'Cookie': cookie
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.status === 200 && data.data) {
+                                    CredentialManager.save('quark', {
+                                        cookie: cookie,
+                                        username: data.data.nickname,
+                                        memberId: data.data.member_id,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.data.nickname
+                                    });
+                                } else {
+                                    reject(new Error('Cookie无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
+        },
+
+        // 天翼云盘登录
+        tianyi: {
+            // 使用Cookie登录
+            loginWithCookie: async (cookie) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://cloud.189.cn/api/portal/getUserBriefInfo.action',
+                        headers: {
+                            'Cookie': cookie
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.res_code === 0) {
+                                    CredentialManager.save('tianyi', {
+                                        cookie: cookie,
+                                        username: data.nickName,
+                                        userId: data.userId,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.nickName
+                                    });
+                                } else {
+                                    reject(new Error('Cookie无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
+        },
+
+        // 123云盘登录
+        pan123: {
+            // 使用Token登录
+            loginWithToken: async (token) => {
+                return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
                         url: 'https://www.123pan.com/api/user/info',
@@ -834,319 +1126,130 @@
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.code === 0 && data.data) {
-                                    LoginChecker.loginStatus['123pan'] = {
-                                        isLoggedIn: true,
-                                        username: data.data.nickname || '已登录',
-                                        token: token
-                                    };
-                                    resolve(true);
+                                    CredentialManager.save('123pan', {
+                                        token: token,
+                                        username: data.data.nickname,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.data.nickname
+                                    });
                                 } else {
-                                    LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
-                                    resolve(false);
+                                    reject(new Error('Token无效或已过期'));
                                 }
                             } catch (e) {
-                                LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
-                                resolve(false);
+                                reject(e);
                             }
                         },
-                        onerror: () => {
-                            LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
-                            resolve(false);
-                        }
+                        onerror: reject
                     });
-                } else {
-                    LoginChecker.loginStatus['123pan'] = { isLoggedIn: false };
-                    resolve(false);
-                }
-            });
-        },
-
-        // 检测115网盘登录状态
-        check115: () => {
-            return new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: 'https://my.115.com/?ct=ajax&ac=nav',
-                    onload: (res) => {
-                        try {
-                            const data = JSON.parse(res.responseText);
-                            if (data.data && data.data.user_id) {
-                                LoginChecker.loginStatus['115'] = {
-                                    isLoggedIn: true,
-                                    username: data.data.user_name || '已登录',
-                                    userId: data.data.user_id
-                                };
-                                resolve(true);
-                            } else {
-                                LoginChecker.loginStatus['115'] = { isLoggedIn: false };
-                                resolve(false);
-                            }
-                        } catch (e) {
-                            LoginChecker.loginStatus['115'] = { isLoggedIn: false };
-                            resolve(false);
-                        }
-                    },
-                    onerror: () => {
-                        LoginChecker.loginStatus['115'] = { isLoggedIn: false };
-                        resolve(false);
-                    }
                 });
-            });
-        },
-
-        // 检测迅雷云盘登录状态
-        checkXunlei: () => {
-            return new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: 'https://pan.xunlei.com/api/pan/user/info',
-                    onload: (res) => {
-                        try {
-                            const data = JSON.parse(res.responseText);
-                            if (data.code === 0 && data.data) {
-                                LoginChecker.loginStatus.xunlei = {
-                                    isLoggedIn: true,
-                                    username: data.data.name || '已登录'
-                                };
-                                resolve(true);
-                            } else {
-                                LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
-                                resolve(false);
-                            }
-                        } catch (e) {
-                            LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
-                            resolve(false);
-                        }
-                    },
-                    onerror: () => {
-                        LoginChecker.loginStatus.xunlei = { isLoggedIn: false };
-                        resolve(false);
-                    }
-                });
-            });
-        },
-
-        // 检测当前网盘的登录状态
-        checkCurrentDisk: async () => {
-            const currentDisk = Utils.getCurrentDisk();
-            if (!currentDisk) return null;
-
-            const checkers = {
-                'baidu': LoginChecker.checkBaidu,
-                'aliyun': LoginChecker.checkAliyun,
-                'quark': LoginChecker.checkQuark,
-                'tianyi': LoginChecker.checkTianyi,
-                '123pan': LoginChecker.check123pan,
-                '115': LoginChecker.check115,
-                'xunlei': LoginChecker.checkXunlei
-            };
-
-            if (checkers[currentDisk.type]) {
-                await checkers[currentDisk.type]();
             }
-
-            return LoginChecker.loginStatus[currentDisk.type];
         },
 
-        // 检测所有网盘登录状态
-        checkAllDisks: async () => {
-            await Promise.all([
-                LoginChecker.checkBaidu(),
-                LoginChecker.checkAliyun(),
-                LoginChecker.checkQuark(),
-                LoginChecker.checkTianyi(),
-                LoginChecker.check123pan(),
-                LoginChecker.check115(),
-                LoginChecker.checkXunlei()
-            ]);
-            return LoginChecker.loginStatus;
+        // 115网盘登录
+        '115': {
+            // 使用Cookie登录
+            loginWithCookie: async (cookie) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://my.115.com/?ct=ajax&ac=nav',
+                        headers: {
+                            'Cookie': cookie
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.data && data.data.user_id) {
+                                    CredentialManager.save('115', {
+                                        cookie: cookie,
+                                        username: data.data.user_name,
+                                        userId: data.data.user_id,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.data.user_name
+                                    });
+                                } else {
+                                    reject(new Error('Cookie无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
         },
 
-        // 获取登录页面URL
-        getLoginUrl: (diskType) => {
-            const urls = {
-                'baidu': 'https://pan.baidu.com/',
-                'aliyun': 'https://www.alipan.com/',
-                'quark': 'https://pan.quark.cn/',
-                'tianyi': 'https://cloud.189.cn/',
-                '123pan': 'https://www.123pan.com/',
-                '115': 'https://115.com/',
-                'xunlei': 'https://pan.xunlei.com/',
-                'lanzou': 'https://lanzou.com/',
-                'hecaiyun': 'https://yun.139.com/',
-                'uc': 'https://drive.uc.cn/'
-            };
-            return urls[diskType] || '#';
+        // 迅雷云盘登录
+        xunlei: {
+            // 使用Cookie登录
+            loginWithCookie: async (cookie) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://pan.xunlei.com/api/pan/user/info',
+                        headers: {
+                            'Cookie': cookie
+                        },
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (data.code === 0 && data.data) {
+                                    CredentialManager.save('xunlei', {
+                                        cookie: cookie,
+                                        username: data.data.name,
+                                        isLoggedIn: true
+                                    });
+                                    resolve({
+                                        success: true,
+                                        username: data.data.name
+                                    });
+                                } else {
+                                    reject(new Error('Cookie无效或已过期'));
+                                }
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                        onerror: reject
+                    });
+                });
+            }
         }
     };
 
     // ==================== 网盘API封装 ====================
     const DiskAPI = {
-        // 百度网盘API
-        baidu: {
-            // 验证分享链接并获取文件列表
-            verifyShare: async (surl, pwd = '') => {
-                return new Promise((resolve, reject) => {
-                    // 先验证提取码
-                    GM_xmlhttpRequest({
-                        method: 'POST',
-                        url: 'https://pan.baidu.com/share/verify?surl=' + surl + '&t=' + Date.now(),
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        data: 'pwd=' + pwd + '&vcode=&vcode_str=',
-                        onload: (res) => {
-                            try {
-                                const data = JSON.parse(res.responseText);
-                                if (data.errno === 0) {
-                                    resolve({ randsk: data.randsk });
-                                } else if (data.errno === -9) {
-                                    reject(new Error('提取码错误'));
-                                } else if (data.errno === -62) {
-                                    reject(new Error('分享链接已失效'));
-                                } else {
-                                    reject(new Error(data.show_msg || '验证失败'));
-                                }
-                            } catch (e) {
-                                reject(e);
-                            }
-                        },
-                        onerror: reject
-                    });
-                });
-            },
-
-            // 获取分享文件列表
-            getShareList: async (shareId, shareid, uk, randsk, dir = '/') => {
-                return new Promise((resolve, reject) => {
-                    GM_xmlhttpRequest({
-                        method: 'GET',
-                        url: `https://pan.baidu.com/share/list?shareid=${shareid}&uk=${uk}&root=1&dir=${encodeURIComponent(dir)}`,
-                        onload: (res) => {
-                            try {
-                                const data = JSON.parse(res.responseText);
-                                if (data.errno === 0) {
-                                    resolve(data.list || []);
-                                } else {
-                                    reject(new Error(data.errmsg || '获取文件列表失败'));
-                                }
-                            } catch (e) {
-                                reject(e);
-                            }
-                        },
-                        onerror: reject
-                    });
-                });
-            },
-
-            // 转存文件到自己的网盘
-            saveShare: async (shareid, uk, fsidlist, path = '/') => {
-                const loginInfo = LoginChecker.loginStatus.baidu;
-                if (!loginInfo || !loginInfo.isLoggedIn) {
-                    throw new Error('请先登录百度网盘');
-                }
-
-                // 获取bdstoken
-                let bdstoken = loginInfo.bdstoken;
-                if (!bdstoken) {
-                    // 从页面获取
-                    const match = document.body.innerHTML.match(/"bdstoken"\s*:\s*"([^"]+)"/);
-                    bdstoken = match ? match[1] : '';
-                }
-
-                if (!bdstoken) {
-                    throw new Error('获取bdstoken失败，请刷新页面重试');
-                }
-
-                return new Promise((resolve, reject) => {
-                    GM_xmlhttpRequest({
-                        method: 'POST',
-                        url: `https://pan.baidu.com/share/transfer?shareid=${shareid}&from=${uk}&bdstoken=${bdstoken}&channel=chunlei&web=1&clienttype=0`,
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        data: `fsidlist=${JSON.stringify(fsidlist)}&path=${encodeURIComponent(path)}`,
-                        onload: (res) => {
-                            try {
-                                const data = JSON.parse(res.responseText);
-                                if (data.errno === 0) {
-                                    resolve({ success: true, message: '转存成功', extra: data.extra });
-                                } else if (data.errno === 12) {
-                                    resolve({ success: false, message: '文件已存在' });
-                                } else if (data.errno === -9) {
-                                    resolve({ success: false, message: '文件不存在或已被删除' });
-                                } else {
-                                    resolve({ success: false, message: data.show_msg || data.errmsg || '转存失败' });
-                                }
-                            } catch (e) {
-                                reject(e);
-                            }
-                        },
-                        onerror: reject
-                    });
-                });
-            }
-        },
-
         // 阿里云盘API
         aliyun: {
-            // 获取分享信息
-            getShareInfo: async (shareId) => {
-                return new Promise((resolve, reject) => {
-                    GM_xmlhttpRequest({
-                        method: 'POST',
-                        url: 'https://api.aliyundrive.com/adrive/v3/share_link/get_share_by_anonymous',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        data: JSON.stringify({ share_id: shareId }),
-                        onload: (res) => {
-                            try {
-                                const data = JSON.parse(res.responseText);
-                                if (data.share_name) {
-                                    resolve(data);
-                                } else {
-                                    reject(new Error(data.message || '获取分享信息失败'));
-                                }
-                            } catch (e) {
-                                reject(e);
-                            }
-                        },
-                        onerror: reject
-                    });
-                });
-            },
-
-            // 获取share_token
             getShareToken: async (shareId, sharePwd = '') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'POST',
                         url: 'https://api.aliyundrive.com/v2/share_link/get_share_token',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         data: JSON.stringify({ share_id: shareId, share_pwd: sharePwd }),
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.share_token) {
                                     resolve(data.share_token);
-                                } else if (data.code === 'ShareLinkTokenInvalid') {
-                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享令牌失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 获取分享文件列表
             getShareFileList: async (shareId, shareToken, parentFileId = 'root') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
@@ -1171,19 +1274,16 @@
                                 } else {
                                     reject(new Error(data.message || '获取文件列表失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 转存文件
             saveShare: async (shareId, shareToken, fileIds, toParentFileId = 'root') => {
-                const loginInfo = LoginChecker.loginStatus.aliyun;
-                if (!loginInfo || !loginInfo.isLoggedIn) {
+                const cred = CredentialManager.get('aliyun');
+                if (!cred || !cred.accessToken) {
                     throw new Error('请先登录阿里云盘');
                 }
 
@@ -1193,7 +1293,7 @@
                         url: 'https://api.aliyundrive.com/adrive/v2/batch',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${loginInfo.accessToken}`,
+                            'Authorization': `Bearer ${cred.accessToken}`,
                             'x-share-token': shareToken
                         },
                         data: JSON.stringify({
@@ -1203,7 +1303,7 @@
                                     share_id: shareId,
                                     auto_rename: true,
                                     to_parent_file_id: toParentFileId,
-                                    to_drive_id: loginInfo.driveId
+                                    to_drive_id: cred.driveId
                                 },
                                 headers: { 'Content-Type': 'application/json' },
                                 id: fileId,
@@ -1219,15 +1319,12 @@
                                     const successCount = data.responses.filter(r => r.status === 201 || r.status === 200).length;
                                     resolve({
                                         success: successCount > 0,
-                                        message: `成功转存 ${successCount}/${fileIds.length} 个文件`,
-                                        data
+                                        message: `成功转存 ${successCount}/${fileIds.length} 个文件`
                                     });
                                 } else {
                                     reject(new Error(data.message || '转存失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
@@ -1237,41 +1334,33 @@
 
         // 夸克网盘API
         quark: {
-            // 获取分享token
             getShareToken: async (pwdId, passcode = '') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'POST',
-                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc`,
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        url: 'https://drive.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc',
+                        headers: { 'Content-Type': 'application/json' },
                         data: JSON.stringify({ pwd_id: pwdId, passcode: passcode }),
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.status === 200 && data.data) {
                                     resolve(data.data);
-                                } else if (data.status === 400) {
-                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享信息失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 获取分享文件列表
-            getShareFileList: async (pwdId, stoken, pdir_fid = '0') => {
+            getShareFileList: async (pwdId, stoken, pdirFid = '0') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
-                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/detail?pr=ucpro&fr=pc&pwd_id=${pwdId}&stoken=${encodeURIComponent(stoken)}&pdir_fid=${pdir_fid}&force=0&_fetch_share=1`,
+                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/detail?pr=ucpro&fr=pc&pwd_id=${pwdId}&stoken=${encodeURIComponent(stoken)}&pdir_fid=${pdirFid}&force=0&_fetch_share=1`,
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
@@ -1280,28 +1369,26 @@
                                 } else {
                                     reject(new Error(data.message || '获取文件列表失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 转存文件
             saveShare: async (pwdId, stoken, fids, toParentFid = '0') => {
-                const loginInfo = LoginChecker.loginStatus.quark;
-                if (!loginInfo || !loginInfo.isLoggedIn) {
+                const cred = CredentialManager.get('quark');
+                if (!cred || !cred.cookie) {
                     throw new Error('请先登录夸克网盘');
                 }
 
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'POST',
-                        url: `https://drive.quark.cn/1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc`,
+                        url: 'https://drive.quark.cn/1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'Cookie': cred.cookie
                         },
                         data: JSON.stringify({
                             fid_list: fids,
@@ -1316,13 +1403,11 @@
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.status === 200) {
-                                    resolve({ success: true, message: '转存成功', data });
+                                    resolve({ success: true, message: '转存成功' });
                                 } else {
                                     resolve({ success: false, message: data.message || '转存失败' });
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
@@ -1332,7 +1417,6 @@
 
         // 123云盘API
         pan123: {
-            // 获取分享信息
             getShareInfo: async (shareKey, sharePwd = '') => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
@@ -1343,21 +1427,16 @@
                                 const data = JSON.parse(res.responseText);
                                 if (data.code === 0) {
                                     resolve(data.data);
-                                } else if (data.code === 4010) {
-                                    reject(new Error('提取码错误'));
                                 } else {
                                     reject(new Error(data.message || '获取分享信息失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 获取分享文件列表
             getShareFileList: async (shareKey, sharePwd = '', parentFileId = 0) => {
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
@@ -1371,19 +1450,16 @@
                                 } else {
                                     reject(new Error(data.message || '获取文件列表失败'));
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
                 });
             },
 
-            // 转存文件
             saveShare: async (shareKey, sharePwd, fileIdList, parentFileId = 0) => {
-                const loginInfo = LoginChecker.loginStatus['123pan'];
-                if (!loginInfo || !loginInfo.isLoggedIn) {
+                const cred = CredentialManager.get('123pan');
+                if (!cred || !cred.token) {
                     throw new Error('请先登录123云盘');
                 }
 
@@ -1393,7 +1469,7 @@
                         url: 'https://www.123pan.com/api/share/save',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${loginInfo.token}`
+                            'Authorization': `Bearer ${cred.token}`
                         },
                         data: JSON.stringify({
                             shareKey: shareKey,
@@ -1409,9 +1485,7 @@
                                 } else {
                                     resolve({ success: false, message: data.message || '转存失败' });
                                 }
-                            } catch (e) {
-                                reject(e);
-                            }
+                            } catch (e) { reject(e); }
                         },
                         onerror: reject
                     });
@@ -1438,10 +1512,6 @@
         },
 
         createPanel: async () => {
-            // 先检测登录状态
-            UI.showToast('正在检测登录状态...', 'info', 2000);
-            await LoginChecker.checkCurrentDisk();
-
             const currentDisk = Utils.getCurrentDisk();
             const overlay = document.createElement('div');
             overlay.className = 'wr-overlay';
@@ -1451,9 +1521,7 @@
             panel.className = 'wr-transfer-panel';
             panel.id = 'wr-main-panel';
 
-            // 当前网盘登录状态
-            const currentLoginStatus = currentDisk ? LoginChecker.loginStatus[currentDisk.type] : null;
-            const isLoggedIn = currentLoginStatus?.isLoggedIn;
+            const credentials = CredentialManager.getAll();
 
             panel.innerHTML = `
                 <div class="wr-panel-header">
@@ -1466,30 +1534,13 @@
                     <button class="wr-panel-close" id="wr-close-btn">&times;</button>
                 </div>
                 <div class="wr-panel-body">
-                    ${currentDisk ? `
-                        <div class="wr-login-status ${isLoggedIn ? 'logged-in' : 'logged-out'}">
-                            <span class="wr-login-dot ${isLoggedIn ? 'online' : 'offline'}"></span>
-                            <span class="wr-login-text">
-                                ${currentDisk.name}: ${isLoggedIn ? `已登录 (${currentLoginStatus.username})` : '未登录'}
-                            </span>
-                            ${!isLoggedIn ? `<button class="wr-login-btn" id="wr-login-btn">去登录</button>` : ''}
-                        </div>
-                    ` : ''}
-
                     <div class="wr-tabs">
                         <div class="wr-tab active" data-tab="transfer">转存文件</div>
+                        <div class="wr-tab" data-tab="accounts">账号管理</div>
                         <div class="wr-tab" data-tab="history">历史记录</div>
-                        <div class="wr-tab" data-tab="settings">设置</div>
                     </div>
 
                     <div class="wr-tab-content active" id="tab-transfer">
-                        ${!isLoggedIn && currentDisk ? `
-                            <div class="wr-tip-box">
-                                ⚠️ 请先登录${currentDisk.name}后再进行转存操作。
-                                <a href="${LoginChecker.getLoginUrl(currentDisk.type)}" target="_blank">点击登录</a>
-                            </div>
-                        ` : ''}
-
                         <div class="wr-section">
                             <div class="wr-section-title">分享链接</div>
                             <div class="wr-input-group">
@@ -1501,7 +1552,7 @@
                         </div>
 
                         <div class="wr-section">
-                            <div class="wr-section-title">文件列表 <span id="wr-file-count" style="font-weight: normal; color: #999;"></span></div>
+                            <div class="wr-section-title">文件列表</div>
                             <button class="wr-btn wr-btn-primary" id="wr-fetch-btn" style="margin-bottom: 10px;">
                                 获取文件列表
                             </button>
@@ -1509,15 +1560,14 @@
                         </div>
 
                         <div class="wr-section">
-                            <div class="wr-section-title">目标网盘 (当前: ${currentDisk?.name || '未知'})</div>
+                            <div class="wr-section-title">目标网盘</div>
                             <div class="wr-disk-grid" id="wr-disk-grid">
                                 ${CONFIG.supportedDisks.map(disk => {
-                                    const diskLogin = LoginChecker.loginStatus[disk.type];
-                                    const diskLoggedIn = diskLogin?.isLoggedIn;
-                                    const isCurrentDisk = currentDisk && currentDisk.type === disk.type;
+                                    const cred = credentials[disk.type];
+                                    const isLoggedIn = cred && cred.isLoggedIn;
                                     return `
-                                        <div class="wr-disk-item ${isCurrentDisk ? 'selected' : ''} ${diskLoggedIn ? 'logged-in' : 'logged-out'}"
-                                             data-disk="${disk.type}" data-name="${disk.name}" title="${diskLoggedIn ? '已登录: ' + (diskLogin.username || '') : '未登录'}">
+                                        <div class="wr-disk-item ${isLoggedIn ? 'logged-in' : ''}"
+                                             data-disk="${disk.type}" data-name="${disk.name}">
                                             <div class="wr-disk-icon" style="background: ${disk.color}">${disk.name[0]}</div>
                                             <div class="wr-disk-name">${disk.name.replace('网盘', '').replace('云盘', '')}</div>
                                         </div>
@@ -1528,12 +1578,12 @@
 
                         <div class="wr-section">
                             <div class="wr-input-group">
-                                <label class="wr-input-label">保存路径 (默认: 根目录)</label>
-                                <input type="text" class="wr-input" id="wr-target-path" value="/" placeholder="输入保存路径">
+                                <label class="wr-input-label">保存路径</label>
+                                <input type="text" class="wr-input" id="wr-target-path" value="/" placeholder="输入保存路径，默认根目录">
                             </div>
                         </div>
 
-                        <button class="wr-btn wr-btn-primary" id="wr-transfer-btn" ${!isLoggedIn ? 'disabled' : ''}>
+                        <button class="wr-btn wr-btn-primary" id="wr-transfer-btn">
                             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                 <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                             </svg>
@@ -1555,31 +1605,18 @@
                         </div>
                     </div>
 
-                    <div class="wr-tab-content" id="tab-history">
-                        <div id="wr-history-list">
-                            ${UI.renderHistory()}
+                    <div class="wr-tab-content" id="tab-accounts">
+                        <div class="wr-tip-box">
+                            💡 登录后可以进行真实转存。支持Cookie/Token登录方式，登录信息安全存储在本地。
+                        </div>
+                        <div class="wr-account-grid" id="wr-account-grid">
+                            ${UI.renderAccountCards(credentials)}
                         </div>
                     </div>
 
-                    <div class="wr-tab-content" id="tab-settings">
-                        <div class="wr-section">
-                            <div class="wr-section-title">登录状态</div>
-                            <div id="wr-all-login-status">正在检测...</div>
-                        </div>
-                        <div class="wr-section">
-                            <div class="wr-section-title">基本设置</div>
-                            <div class="wr-input-group">
-                                <label class="wr-input-label">默认保存路径</label>
-                                <input type="text" class="wr-input" id="wr-default-path" value="${GM_getValue('default_path', '/')}" placeholder="输入默认保存路径">
-                            </div>
-                            <button class="wr-btn wr-btn-primary" id="wr-save-settings" style="margin-top: 10px;">保存设置</button>
-                        </div>
-                        <div class="wr-section">
-                            <div class="wr-section-title">关于</div>
-                            <p style="color: #666; font-size: 13px; line-height: 1.8;">
-                                ${CONFIG.appName} v${CONFIG.version}<br>
-                                作者：${CONFIG.author}
-                            </p>
+                    <div class="wr-tab-content" id="tab-history">
+                        <div id="wr-history-list">
+                            ${UI.renderHistory()}
                         </div>
                     </div>
                 </div>
@@ -1592,34 +1629,32 @@
             document.body.appendChild(panel);
 
             UI.bindPanelEvents();
-
-            // 异步检测所有网盘登录状态
-            LoginChecker.checkAllDisks().then(() => {
-                UI.updateAllLoginStatus();
-            });
         },
 
-        updateAllLoginStatus: () => {
-            const container = document.getElementById('wr-all-login-status');
-            if (!container) return;
-
-            const html = CONFIG.supportedDisks.map(disk => {
-                const status = LoginChecker.loginStatus[disk.type];
-                const isLoggedIn = status?.isLoggedIn;
+        renderAccountCards: (credentials) => {
+            return CONFIG.supportedDisks.map(disk => {
+                const cred = credentials[disk.type];
+                const isLoggedIn = cred && cred.isLoggedIn;
                 return `
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                        <span style="display: flex; align-items: center; gap: 8px;">
-                            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${isLoggedIn ? '#4caf50' : '#ff9800'};"></span>
-                            ${disk.name}
-                        </span>
-                        <span style="color: ${isLoggedIn ? '#4caf50' : '#ff9800'}; font-size: 12px;">
-                            ${isLoggedIn ? `已登录 (${status.username || ''})` : '未登录'}
-                        </span>
+                    <div class="wr-account-card ${isLoggedIn ? 'logged-in' : ''}" data-disk="${disk.type}">
+                        <div class="wr-account-header">
+                            <div class="wr-account-icon" style="background: ${disk.color}">${disk.name[0]}</div>
+                            <div class="wr-account-info">
+                                <div class="wr-account-name">${disk.name}</div>
+                                <div class="wr-account-status ${isLoggedIn ? 'online' : ''}">
+                                    ${isLoggedIn ? `已登录: ${cred.username || '用户'}` : '未登录'}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wr-account-actions">
+                            ${isLoggedIn ?
+                                `<button class="wr-account-btn logout" data-disk="${disk.type}" data-action="logout">退出登录</button>` :
+                                `<button class="wr-account-btn login" data-disk="${disk.type}" data-action="login">登录</button>`
+                            }
+                        </div>
                     </div>
                 `;
             }).join('');
-
-            container.innerHTML = html;
         },
 
         renderHistory: () => {
@@ -1628,33 +1663,293 @@
                 return '<p style="text-align: center; color: #999; padding: 40px 0;">暂无转存记录</p>';
             }
             return history.slice(0, 20).map(item => `
-                <div class="wr-history-item">
-                    <div class="wr-history-info">
-                        <div class="wr-history-title">${item.fileName || '未知文件'}</div>
-                        <div class="wr-history-meta">
-                            ${item.sourceDisk} → ${item.targetDisk} | ${item.time} | 耗时: ${item.duration}
-                        </div>
+                <div style="padding: 12px; border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 10px;">
+                    <div style="font-size: 14px; font-weight: 500; color: #333;">${item.fileName || '文件转存'}</div>
+                    <div style="font-size: 12px; color: #999; margin-top: 4px;">
+                        ${item.sourceDisk} → ${item.targetDisk} | ${item.time} | ${item.duration}
                     </div>
-                    <span class="wr-history-status ${item.success ? 'success' : 'failed'}">
+                    <span style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-top: 6px;
+                        background: ${item.success ? '#e8f5e9' : '#ffebee'}; color: ${item.success ? '#2e7d32' : '#c62828'};">
                         ${item.success ? '成功' : '失败'}
                     </span>
                 </div>
             `).join('');
         },
 
-        bindPanelEvents: () => {
-            document.getElementById('wr-close-btn').onclick = UI.closePanel;
+        showLoginModal: (diskType) => {
+            const disk = CONFIG.supportedDisks.find(d => d.type === diskType);
+            if (!disk) return;
 
-            // 登录按钮
-            const loginBtn = document.getElementById('wr-login-btn');
-            if (loginBtn) {
-                loginBtn.onclick = () => {
-                    const currentDisk = Utils.getCurrentDisk();
-                    if (currentDisk) {
-                        window.location.reload();
+            const overlay = document.createElement('div');
+            overlay.className = 'wr-overlay';
+            overlay.style.zIndex = '9999998';
+            overlay.onclick = () => {
+                overlay.remove();
+                modal.remove();
+            };
+
+            const modal = document.createElement('div');
+            modal.className = 'wr-login-modal';
+            modal.id = 'wr-login-modal';
+
+            // 根据网盘类型显示不同的登录方式
+            let loginContent = '';
+
+            if (['baidu', 'aliyun', 'quark'].includes(diskType)) {
+                // 支持二维码登录的网盘
+                loginContent = `
+                    <div class="wr-login-tabs">
+                        <div class="wr-login-tab active" data-method="cookie">Cookie登录</div>
+                        <div class="wr-login-tab" data-method="qrcode">扫码登录</div>
+                    </div>
+                    <div class="wr-login-content active" id="login-cookie">
+                        ${UI.getCookieLoginContent(diskType, disk.name)}
+                    </div>
+                    <div class="wr-login-content" id="login-qrcode">
+                        <div class="wr-qrcode-container">
+                            <div id="wr-qrcode-img" style="width: 200px; height: 200px; background: #f5f5f5; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                                点击获取二维码
+                            </div>
+                            <button class="wr-btn wr-btn-primary" id="wr-get-qrcode">获取登录二维码</button>
+                            <p class="wr-qrcode-tip" style="margin-top: 12px;">使用${disk.name}APP扫码登录</p>
+                        </div>
+                    </div>
+                `;
+            } else if (diskType === '123pan') {
+                // 123云盘使用Token登录
+                loginContent = `
+                    <div class="wr-warning-box">
+                        请输入123云盘的 Authorization Token
+                    </div>
+                    <div class="wr-input-group">
+                        <label class="wr-input-label">获取方法：</label>
+                        <ol class="wr-step-list">
+                            <li>登录 <a href="https://www.123pan.com" target="_blank">123云盘官网</a></li>
+                            <li>按 F12 打开开发者工具</li>
+                            <li>切换到 Network(网络) 标签</li>
+                            <li>刷新页面，点击任意请求</li>
+                            <li>在请求头中找到 Authorization 的值</li>
+                        </ol>
+                    </div>
+                    <div class="wr-input-group">
+                        <label class="wr-input-label">Token</label>
+                        <textarea class="wr-cookie-input" id="wr-login-token" placeholder="Bearer eyJhbGc..."></textarea>
+                    </div>
+                    <button class="wr-btn wr-btn-primary" id="wr-login-submit">登录</button>
+                `;
+            } else {
+                // 其他网盘使用Cookie登录
+                loginContent = UI.getCookieLoginContent(diskType, disk.name);
+            }
+
+            modal.innerHTML = `
+                <div class="wr-login-header">
+                    <div class="wr-login-title">登录${disk.name}</div>
+                    <button class="wr-login-close" id="wr-login-close">&times;</button>
+                </div>
+                <div class="wr-login-body">
+                    ${loginContent}
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+
+            UI.bindLoginModalEvents(diskType);
+        },
+
+        getCookieLoginContent: (diskType, diskName) => {
+            const cookieGuides = {
+                'baidu': 'BDUSS 和 STOKEN',
+                'aliyun': 'refresh_token（在localStorage中的token字段）',
+                'quark': '__puus 等Cookie',
+                'tianyi': 'COOKIE_LOGIN_USER',
+                '115': 'UID 和 CID',
+                'xunlei': 'xlly_session'
+            };
+
+            return `
+                <div class="wr-warning-box">
+                    请输入${diskName}的Cookie信息
+                </div>
+                <div class="wr-input-group">
+                    <label class="wr-input-label">获取方法：</label>
+                    <ol class="wr-step-list">
+                        <li>在浏览器中登录 ${diskName}</li>
+                        <li>按 F12 打开开发者工具</li>
+                        <li>切换到 Application(应用) 标签</li>
+                        <li>在左侧找到 Cookies，选择对应域名</li>
+                        <li>复制需要的Cookie值：${cookieGuides[diskType] || '全部Cookie'}</li>
+                    </ol>
+                </div>
+                <div class="wr-input-group">
+                    <label class="wr-input-label">${diskType === 'aliyun' ? 'Refresh Token' : 'Cookie'}</label>
+                    <textarea class="wr-cookie-input" id="wr-login-cookie" placeholder="${diskType === 'aliyun' ? '请输入refresh_token值' : '请输入Cookie值'}"></textarea>
+                </div>
+                <button class="wr-btn wr-btn-primary" id="wr-login-submit">登录</button>
+            `;
+        },
+
+        bindLoginModalEvents: (diskType) => {
+            document.getElementById('wr-login-close').onclick = () => {
+                document.getElementById('wr-login-modal')?.remove();
+                document.querySelectorAll('.wr-overlay').forEach(o => {
+                    if (o.style.zIndex === '9999998') o.remove();
+                });
+            };
+
+            // Tab切换
+            document.querySelectorAll('.wr-login-tab').forEach(tab => {
+                tab.onclick = () => {
+                    document.querySelectorAll('.wr-login-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.wr-login-content').forEach(c => c.classList.remove('active'));
+                    tab.classList.add('active');
+                    document.getElementById('login-' + tab.dataset.method)?.classList.add('active');
+                };
+            });
+
+            // 获取二维码按钮
+            const qrcodeBtn = document.getElementById('wr-get-qrcode');
+            if (qrcodeBtn) {
+                qrcodeBtn.onclick = async () => {
+                    try {
+                        qrcodeBtn.disabled = true;
+                        qrcodeBtn.textContent = '获取中...';
+
+                        let qrData;
+                        if (diskType === 'baidu') {
+                            qrData = await DiskLogin.baidu.getQRCode();
+                        } else if (diskType === 'aliyun') {
+                            qrData = await DiskLogin.aliyun.getQRCode();
+                        } else if (diskType === 'quark') {
+                            qrData = await DiskLogin.quark.getQRCode();
+                        }
+
+                        const qrContainer = document.getElementById('wr-qrcode-img');
+                        if (qrData.imgUrl.startsWith('http')) {
+                            qrContainer.innerHTML = `<img src="${qrData.imgUrl}" style="width: 100%; height: 100%;">`;
+                        } else {
+                            // 如果是二维码内容，需要生成二维码图片
+                            qrContainer.innerHTML = `<div style="padding: 20px; word-break: break-all; font-size: 12px;">${qrData.imgUrl}</div>`;
+                        }
+
+                        qrcodeBtn.textContent = '刷新二维码';
+                        qrcodeBtn.disabled = false;
+
+                        UI.showToast('请使用APP扫描二维码', 'info');
+
+                    } catch (error) {
+                        UI.showToast('获取二维码失败: ' + error.message, 'error');
+                        qrcodeBtn.textContent = '重新获取';
+                        qrcodeBtn.disabled = false;
                     }
                 };
             }
+
+            // 登录提交按钮
+            const submitBtn = document.getElementById('wr-login-submit');
+            if (submitBtn) {
+                submitBtn.onclick = async () => {
+                    const cookieInput = document.getElementById('wr-login-cookie');
+                    const tokenInput = document.getElementById('wr-login-token');
+                    const value = (cookieInput?.value || tokenInput?.value || '').trim();
+
+                    if (!value) {
+                        UI.showToast('请输入登录凭证', 'warning');
+                        return;
+                    }
+
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<div class="wr-spinner" style="border-color: rgba(255,255,255,0.3); border-top-color: #fff;"></div> 登录中...';
+
+                    try {
+                        let result;
+                        if (diskType === 'baidu') {
+                            result = await DiskLogin.baidu.loginWithCookie(value);
+                        } else if (diskType === 'aliyun') {
+                            result = await DiskLogin.aliyun.loginWithToken(value);
+                        } else if (diskType === 'quark') {
+                            result = await DiskLogin.quark.loginWithCookie(value);
+                        } else if (diskType === 'tianyi') {
+                            result = await DiskLogin.tianyi.loginWithCookie(value);
+                        } else if (diskType === '123pan') {
+                            // 处理123pan的token，可能带有Bearer前缀
+                            const token = value.replace(/^Bearer\s+/i, '');
+                            result = await DiskLogin.pan123.loginWithToken(token);
+                        } else if (diskType === '115') {
+                            result = await DiskLogin['115'].loginWithCookie(value);
+                        } else if (diskType === 'xunlei') {
+                            result = await DiskLogin.xunlei.loginWithCookie(value);
+                        } else {
+                            throw new Error('暂不支持该网盘登录');
+                        }
+
+                        UI.showToast(`登录成功: ${result.username}`, 'success');
+
+                        // 关闭登录弹窗并刷新界面
+                        document.getElementById('wr-login-modal')?.remove();
+                        document.querySelectorAll('.wr-overlay').forEach(o => {
+                            if (o.style.zIndex === '9999998') o.remove();
+                        });
+
+                        // 刷新账号卡片
+                        UI.refreshAccountCards();
+
+                    } catch (error) {
+                        UI.showToast('登录失败: ' + error.message, 'error');
+                    } finally {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '登录';
+                    }
+                };
+            }
+        },
+
+        refreshAccountCards: () => {
+            const container = document.getElementById('wr-account-grid');
+            if (container) {
+                container.innerHTML = UI.renderAccountCards(CredentialManager.getAll());
+                UI.bindAccountEvents();
+            }
+
+            // 同时刷新目标网盘选择器
+            const diskGrid = document.getElementById('wr-disk-grid');
+            if (diskGrid) {
+                const credentials = CredentialManager.getAll();
+                CONFIG.supportedDisks.forEach(disk => {
+                    const item = diskGrid.querySelector(`[data-disk="${disk.type}"]`);
+                    if (item) {
+                        const cred = credentials[disk.type];
+                        if (cred && cred.isLoggedIn) {
+                            item.classList.add('logged-in');
+                        } else {
+                            item.classList.remove('logged-in');
+                        }
+                    }
+                });
+            }
+        },
+
+        bindAccountEvents: () => {
+            document.querySelectorAll('.wr-account-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const diskType = btn.dataset.disk;
+                    const action = btn.dataset.action;
+
+                    if (action === 'login') {
+                        UI.showLoginModal(diskType);
+                    } else if (action === 'logout') {
+                        CredentialManager.remove(diskType);
+                        UI.showToast('已退出登录', 'success');
+                        UI.refreshAccountCards();
+                    }
+                };
+            });
+        },
+
+        bindPanelEvents: () => {
+            document.getElementById('wr-close-btn').onclick = UI.closePanel;
 
             // Tab切换
             document.querySelectorAll('.wr-tab').forEach(tab => {
@@ -1680,12 +1975,8 @@
             // 转存按钮
             document.getElementById('wr-transfer-btn').onclick = TransferManager.startTransfer;
 
-            // 保存设置
-            document.getElementById('wr-save-settings').onclick = () => {
-                const defaultPath = document.getElementById('wr-default-path').value;
-                GM_setValue('default_path', defaultPath);
-                UI.showToast('设置已保存', 'success');
-            };
+            // 账号管理事件
+            UI.bindAccountEvents();
         },
 
         closePanel: () => {
@@ -1716,27 +2007,28 @@
 
         renderFileList: (files) => {
             const container = document.getElementById('wr-file-list');
-            const countEl = document.getElementById('wr-file-count');
-
             if (!files || files.length === 0) {
                 container.style.display = 'none';
-                countEl.textContent = '';
                 return;
             }
 
-            countEl.textContent = `(共 ${files.length} 个文件)`;
             container.style.display = 'block';
-
             container.innerHTML = files.map((file, index) => `
                 <div class="wr-file-item">
                     <input type="checkbox" class="wr-file-checkbox" data-index="${index}" checked>
-                    <span class="wr-file-name" title="${file.name || file.server_filename || file.fileName}">${file.name || file.server_filename || file.fileName}</span>
+                    <span class="wr-file-name">${file.name || file.server_filename || file.fileName || file.FileName}</span>
                     <span class="wr-file-size">${Utils.formatSize(file.size || file.Size || 0)}</span>
                 </div>
             `).join('');
 
-            // 存储文件列表
             TransferManager.fileList = files;
+        },
+
+        getSelectedFiles: (files) => {
+            const checkboxes = document.querySelectorAll('.wr-file-checkbox:checked');
+            if (checkboxes.length === 0) return files;
+            const selectedIndexes = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+            return files.filter((_, index) => selectedIndexes.includes(index));
         }
     };
 
@@ -1745,6 +2037,10 @@
         startTime: 0,
         timer: null,
         fileList: [],
+        shareInfo: null,
+        shareToken: null,
+        quarkToken: null,
+        sharePwd: '',
 
         fetchFileList: async () => {
             const shareLink = document.getElementById('wr-share-link').value.trim();
@@ -1807,7 +2103,6 @@
         startTransfer: async () => {
             const shareLink = document.getElementById('wr-share-link').value.trim();
             const sharePwd = document.getElementById('wr-share-pwd').value.trim();
-            const targetPath = document.getElementById('wr-target-path').value.trim() || '/';
             const selectedDisk = document.querySelector('.wr-disk-item.selected');
 
             if (!shareLink) {
@@ -1829,11 +2124,16 @@
                 return;
             }
 
-            // 检查目标网盘登录状态
-            const targetLoginInfo = LoginChecker.loginStatus[targetDiskType];
-            if (!targetLoginInfo || !targetLoginInfo.isLoggedIn) {
-                UI.showToast(`请先登录${targetDiskName}`, 'error');
-                window.open(LoginChecker.getLoginUrl(targetDiskType), '_blank');
+            // 检查目标网盘是否已登录
+            const cred = CredentialManager.get(targetDiskType);
+            if (!cred || !cred.isLoggedIn) {
+                UI.showToast(`请先在「账号管理」中登录${targetDiskName}`, 'error');
+                return;
+            }
+
+            // 检查源网盘和目标网盘是否一致
+            if (shareInfo.type !== targetDiskType) {
+                UI.showToast(`暂不支持跨网盘转存，请选择${shareInfo.name}作为目标`, 'warning');
                 return;
             }
 
@@ -1854,12 +2154,10 @@
             try {
                 let result;
 
-                // 根据源网盘和目标网盘类型执行转存
                 UI.updateProgress(20, '正在获取分享信息...');
 
                 switch (shareInfo.type) {
                     case 'aliyun':
-                        // 阿里云盘转存
                         let shareToken = TransferManager.shareToken;
                         if (!shareToken) {
                             shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
@@ -1871,7 +2169,6 @@
                             files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
                         }
 
-                        // 获取选中的文件
                         const selectedFiles = UI.getSelectedFiles(files);
                         if (selectedFiles.length === 0) {
                             throw new Error('请选择要转存的文件');
@@ -1883,7 +2180,6 @@
                         break;
 
                     case 'quark':
-                        // 夸克网盘转存
                         let quarkToken = TransferManager.quarkToken;
                         if (!quarkToken) {
                             quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
@@ -1906,7 +2202,6 @@
                         break;
 
                     case '123pan':
-                        // 123云盘转存
                         UI.updateProgress(40, '正在获取文件列表...');
                         let pan123Files = TransferManager.fileList;
                         if (!pan123Files || pan123Files.length === 0) {
@@ -1924,7 +2219,7 @@
                         break;
 
                     default:
-                        throw new Error(`暂不支持从${shareInfo.name}转存，请等待后续更新`);
+                        throw new Error(`暂不支持从${shareInfo.name}转存`);
                 }
 
                 UI.updateProgress(100, '转存完成！');
@@ -1937,7 +2232,6 @@
                     fileName: shareInfo.shareId,
                     sourceDisk: shareInfo.name,
                     targetDisk: targetDiskName,
-                    targetPath: targetPath,
                     time: new Date().toLocaleString(),
                     duration: duration,
                     success: result.success
@@ -1963,11 +2257,9 @@
                     fileName: shareInfo?.shareId || '未知',
                     sourceDisk: shareInfo?.name || '未知',
                     targetDisk: targetDiskName,
-                    targetPath: targetPath,
                     time: new Date().toLocaleString(),
                     duration: duration,
-                    success: false,
-                    error: error.message
+                    success: false
                 });
 
                 UI.updateProgress(0, `转存失败: ${error.message}`);
@@ -1985,15 +2277,6 @@
         }
     };
 
-    // 获取选中的文件
-    UI.getSelectedFiles = (files) => {
-        const checkboxes = document.querySelectorAll('.wr-file-checkbox:checked');
-        if (checkboxes.length === 0) return files; // 如果没有复选框或全选，返回所有文件
-
-        const selectedIndexes = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
-        return files.filter((_, index) => selectedIndexes.includes(index));
-    };
-
     // ==================== 初始化 ====================
     const init = async () => {
         GM_addStyle(STYLES);
@@ -2001,22 +2284,16 @@
         const currentDisk = Utils.getCurrentDisk();
         if (currentDisk) {
             console.log(`${CONFIG.appName}: 检测到 ${currentDisk.name}`);
-            // 自动检测登录状态
-            await LoginChecker.checkCurrentDisk();
         }
 
         UI.createFloatButton();
 
         GM_registerMenuCommand('打开转存面板', UI.createPanel);
-        GM_registerMenuCommand('检测登录状态', async () => {
-            UI.showToast('正在检测登录状态...', 'info');
-            await LoginChecker.checkAllDisks();
-            const currentStatus = LoginChecker.loginStatus[currentDisk?.type];
-            if (currentStatus?.isLoggedIn) {
-                UI.showToast(`${currentDisk.name} 已登录: ${currentStatus.username}`, 'success');
-            } else {
-                UI.showToast(`${currentDisk?.name || '当前网盘'} 未登录`, 'warning');
-            }
+        GM_registerMenuCommand('账号管理', () => {
+            UI.createPanel();
+            setTimeout(() => {
+                document.querySelector('[data-tab="accounts"]')?.click();
+            }, 100);
         });
 
         console.log(`${CONFIG.appName} v${CONFIG.version} 已加载`);

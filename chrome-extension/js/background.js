@@ -1,6 +1,6 @@
 // 威软网盘转存工具 - Background Service Worker
 // Author: 威软网盘转存工具
-// Version: 1.1.0
+// Version: 1.2.0
 
 // 监听安装事件
 chrome.runtime.onInstalled.addListener((details) => {
@@ -13,121 +13,182 @@ chrome.runtime.onInstalled.addListener((details) => {
                 notifyError: true
             },
             history: [],
-            loginStatus: {}
+            credentials: {}
         });
     }
 });
 
-// 登录检测器
-const LoginChecker = {
-    loginStatus: {},
+// 凭证管理器
+const CredentialManager = {
+    async save(diskType, credentials) {
+        const { credentials: allCreds = {} } = await chrome.storage.local.get('credentials');
+        allCreds[diskType] = {
+            ...credentials,
+            savedAt: Date.now()
+        };
+        await chrome.storage.local.set({ credentials: allCreds });
+    },
 
-    // 检测百度网盘登录状态
-    async checkBaidu() {
-        try {
+    async get(diskType) {
+        const { credentials: allCreds = {} } = await chrome.storage.local.get('credentials');
+        return allCreds[diskType] || null;
+    },
+
+    async remove(diskType) {
+        const { credentials: allCreds = {} } = await chrome.storage.local.get('credentials');
+        delete allCreds[diskType];
+        await chrome.storage.local.set({ credentials: allCreds });
+    },
+
+    async getAll() {
+        const { credentials = {} } = await chrome.storage.local.get('credentials');
+        return credentials;
+    }
+};
+
+// 网盘登录模块
+const DiskLogin = {
+    // 百度网盘登录
+    baidu: {
+        async loginWithCookie(cookie) {
             const response = await fetch('https://pan.baidu.com/api/loginStatus?clienttype=0&web=1', {
-                credentials: 'include'
+                headers: { 'Cookie': cookie }
             });
             const data = await response.json();
             if (data.errno === 0 && data.login_info) {
-                this.loginStatus.baidu = {
-                    isLoggedIn: true,
-                    username: data.login_info.username || '已登录',
-                    uk: data.login_info.uk
-                };
-                return true;
+                await CredentialManager.save('baidu', {
+                    cookie: cookie,
+                    username: data.login_info.username,
+                    uk: data.login_info.uk,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.login_info.username };
             }
-        } catch (e) {}
-        this.loginStatus.baidu = { isLoggedIn: false };
-        return false;
+            throw new Error('Cookie无效或已过期');
+        }
     },
 
-    // 检测夸克网盘登录状态
-    async checkQuark() {
-        try {
+    // 阿里云盘登录
+    aliyun: {
+        async loginWithToken(refreshToken) {
+            const response = await fetch('https://api.aliyundrive.com/token/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+            const data = await response.json();
+            if (data.access_token) {
+                await CredentialManager.save('aliyun', {
+                    accessToken: data.access_token,
+                    refreshToken: data.refresh_token,
+                    driveId: data.default_drive_id,
+                    username: data.nick_name || data.user_name,
+                    userId: data.user_id,
+                    expireTime: Date.now() + (data.expires_in || 7200) * 1000,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.nick_name || data.user_name };
+            }
+            throw new Error(data.message || 'Token无效或已过期');
+        }
+    },
+
+    // 夸克网盘登录
+    quark: {
+        async loginWithCookie(cookie) {
             const response = await fetch('https://drive.quark.cn/1/clouddrive/member/info?pr=ucpro&fr=pc', {
-                credentials: 'include'
+                headers: { 'Cookie': cookie }
             });
             const data = await response.json();
             if (data.status === 200 && data.data) {
-                this.loginStatus.quark = {
-                    isLoggedIn: true,
-                    username: data.data.nickname || '已登录'
-                };
-                return true;
+                await CredentialManager.save('quark', {
+                    cookie: cookie,
+                    username: data.data.nickname,
+                    memberId: data.data.member_id,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.data.nickname };
             }
-        } catch (e) {}
-        this.loginStatus.quark = { isLoggedIn: false };
-        return false;
+            throw new Error('Cookie无效或已过期');
+        }
     },
 
-    // 检测天翼云盘登录状态
-    async checkTianyi() {
-        try {
+    // 天翼云盘登录
+    tianyi: {
+        async loginWithCookie(cookie) {
             const response = await fetch('https://cloud.189.cn/api/portal/getUserBriefInfo.action', {
-                credentials: 'include'
+                headers: { 'Cookie': cookie }
             });
             const data = await response.json();
             if (data.res_code === 0) {
-                this.loginStatus.tianyi = {
-                    isLoggedIn: true,
-                    username: data.nickName || '已登录'
-                };
-                return true;
+                await CredentialManager.save('tianyi', {
+                    cookie: cookie,
+                    username: data.nickName,
+                    userId: data.userId,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.nickName };
             }
-        } catch (e) {}
-        this.loginStatus.tianyi = { isLoggedIn: false };
-        return false;
+            throw new Error('Cookie无效或已过期');
+        }
     },
 
-    // 检测115网盘登录状态
-    async check115() {
-        try {
+    // 123云盘登录
+    pan123: {
+        async loginWithToken(token) {
+            const response = await fetch('https://www.123pan.com/api/user/info', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            if (data.code === 0 && data.data) {
+                await CredentialManager.save('123pan', {
+                    token: token,
+                    username: data.data.nickname,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.data.nickname };
+            }
+            throw new Error('Token无效或已过期');
+        }
+    },
+
+    // 115网盘登录
+    '115': {
+        async loginWithCookie(cookie) {
             const response = await fetch('https://my.115.com/?ct=ajax&ac=nav', {
-                credentials: 'include'
+                headers: { 'Cookie': cookie }
             });
             const data = await response.json();
             if (data.data && data.data.user_id) {
-                this.loginStatus['115'] = {
-                    isLoggedIn: true,
-                    username: data.data.user_name || '已登录'
-                };
-                return true;
+                await CredentialManager.save('115', {
+                    cookie: cookie,
+                    username: data.data.user_name,
+                    userId: data.data.user_id,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.data.user_name };
             }
-        } catch (e) {}
-        this.loginStatus['115'] = { isLoggedIn: false };
-        return false;
+            throw new Error('Cookie无效或已过期');
+        }
     },
 
-    // 检测所有网盘登录状态
-    async checkAll() {
-        await Promise.all([
-            this.checkBaidu(),
-            this.checkQuark(),
-            this.checkTianyi(),
-            this.check115()
-        ]);
-
-        // 保存到storage
-        chrome.storage.local.set({ loginStatus: this.loginStatus });
-        return this.loginStatus;
-    },
-
-    // 获取登录页面URL
-    getLoginUrl(diskType) {
-        const urls = {
-            'baidu': 'https://pan.baidu.com/',
-            'aliyun': 'https://www.alipan.com/',
-            'quark': 'https://pan.quark.cn/',
-            'tianyi': 'https://cloud.189.cn/',
-            '123pan': 'https://www.123pan.com/',
-            '115': 'https://115.com/',
-            'xunlei': 'https://pan.xunlei.com/',
-            'lanzou': 'https://lanzou.com/',
-            'hecaiyun': 'https://yun.139.com/',
-            'uc': 'https://drive.uc.cn/'
-        };
-        return urls[diskType] || '#';
+    // 迅雷云盘登录
+    xunlei: {
+        async loginWithCookie(cookie) {
+            const response = await fetch('https://pan.xunlei.com/api/pan/user/info', {
+                headers: { 'Cookie': cookie }
+            });
+            const data = await response.json();
+            if (data.code === 0 && data.data) {
+                await CredentialManager.save('xunlei', {
+                    cookie: cookie,
+                    username: data.data.name,
+                    isLoggedIn: true
+                });
+                return { success: true, username: data.data.name };
+            }
+            throw new Error('Cookie无效或已过期');
+        }
     }
 };
 
@@ -196,6 +257,47 @@ const DiskAPI = {
                 return data.items;
             }
             throw new Error(data.message || '获取文件列表失败');
+        },
+
+        async saveShare(shareId, shareToken, fileIds) {
+            const cred = await CredentialManager.get('aliyun');
+            if (!cred || !cred.accessToken) {
+                throw new Error('请先登录阿里云盘');
+            }
+
+            const response = await fetch('https://api.aliyundrive.com/adrive/v2/batch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cred.accessToken}`,
+                    'x-share-token': shareToken
+                },
+                body: JSON.stringify({
+                    requests: fileIds.map(fileId => ({
+                        body: {
+                            file_id: fileId,
+                            share_id: shareId,
+                            auto_rename: true,
+                            to_parent_file_id: 'root',
+                            to_drive_id: cred.driveId
+                        },
+                        headers: { 'Content-Type': 'application/json' },
+                        id: fileId,
+                        method: 'POST',
+                        url: '/file/copy'
+                    })),
+                    resource: 'file'
+                })
+            });
+            const data = await response.json();
+            if (data.responses) {
+                const successCount = data.responses.filter(r => r.status === 201 || r.status === 200).length;
+                return {
+                    success: successCount > 0,
+                    message: `成功转存 ${successCount}/${fileIds.length} 个文件`
+                };
+            }
+            throw new Error(data.message || '转存失败');
         }
     },
 
@@ -227,9 +329,17 @@ const DiskAPI = {
         },
 
         async saveShare(pwdId, stoken, fids) {
+            const cred = await CredentialManager.get('quark');
+            if (!cred || !cred.cookie) {
+                throw new Error('请先登录夸克网盘');
+            }
+
             const response = await fetch('https://drive.quark.cn/1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cookie': cred.cookie
+                },
                 credentials: 'include',
                 body: JSON.stringify({
                     fid_list: fids,
@@ -247,14 +357,127 @@ const DiskAPI = {
             }
             return { success: false, message: data.message || '转存失败' };
         }
+    },
+
+    // 123云盘
+    pan123: {
+        async getShareInfo(shareKey, sharePwd = '') {
+            const response = await fetch(`https://www.123pan.com/api/share/info?shareKey=${shareKey}&sharePwd=${sharePwd}`);
+            const data = await response.json();
+            if (data.code === 0) {
+                return data.data;
+            }
+            throw new Error(data.message || '获取分享信息失败');
+        },
+
+        async getShareFileList(shareKey, sharePwd = '') {
+            const response = await fetch(`https://www.123pan.com/api/share/get?shareKey=${shareKey}&sharePwd=${sharePwd}&parentFileId=0&limit=100`);
+            const data = await response.json();
+            if (data.code === 0) {
+                return data.data.InfoList || [];
+            }
+            throw new Error(data.message || '获取文件列表失败');
+        },
+
+        async saveShare(shareKey, sharePwd, fileIdList) {
+            const cred = await CredentialManager.get('123pan');
+            if (!cred || !cred.token) {
+                throw new Error('请先登录123云盘');
+            }
+
+            const response = await fetch('https://www.123pan.com/api/share/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cred.token}`
+                },
+                body: JSON.stringify({
+                    shareKey: shareKey,
+                    sharePwd: sharePwd,
+                    fileIdList: fileIdList,
+                    parentFileId: 0
+                })
+            });
+            const data = await response.json();
+            if (data.code === 0) {
+                return { success: true, message: '转存成功' };
+            }
+            return { success: false, message: data.message || '转存失败' };
+        }
     }
 };
 
+// 获取登录页面URL
+function getLoginUrl(diskType) {
+    const urls = {
+        'baidu': 'https://pan.baidu.com/',
+        'aliyun': 'https://www.alipan.com/',
+        'quark': 'https://pan.quark.cn/',
+        'tianyi': 'https://cloud.189.cn/',
+        '123pan': 'https://www.123pan.com/',
+        '115': 'https://115.com/',
+        'xunlei': 'https://pan.xunlei.com/',
+        'lanzou': 'https://lanzou.com/',
+        'hecaiyun': 'https://yun.139.com/',
+        'uc': 'https://drive.uc.cn/'
+    };
+    return urls[diskType] || '#';
+}
+
 // 监听来自popup的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'checkLoginStatus') {
-        LoginChecker.checkAll().then(status => {
-            sendResponse({ success: true, data: status });
+    if (request.action === 'getCredentials') {
+        CredentialManager.getAll().then(creds => {
+            sendResponse({ success: true, data: creds });
+        }).catch(error => {
+            sendResponse({ success: false, error: error.message });
+        });
+        return true;
+    }
+
+    if (request.action === 'login') {
+        const { diskType, credential } = request.data;
+        let loginPromise;
+
+        switch (diskType) {
+            case 'baidu':
+                loginPromise = DiskLogin.baidu.loginWithCookie(credential);
+                break;
+            case 'aliyun':
+                loginPromise = DiskLogin.aliyun.loginWithToken(credential);
+                break;
+            case 'quark':
+                loginPromise = DiskLogin.quark.loginWithCookie(credential);
+                break;
+            case 'tianyi':
+                loginPromise = DiskLogin.tianyi.loginWithCookie(credential);
+                break;
+            case '123pan':
+                const token = credential.replace(/^Bearer\s+/i, '');
+                loginPromise = DiskLogin.pan123.loginWithToken(token);
+                break;
+            case '115':
+                loginPromise = DiskLogin['115'].loginWithCookie(credential);
+                break;
+            case 'xunlei':
+                loginPromise = DiskLogin.xunlei.loginWithCookie(credential);
+                break;
+            default:
+                sendResponse({ success: false, error: '暂不支持该网盘登录' });
+                return true;
+        }
+
+        loginPromise.then(result => {
+            sendResponse({ success: true, data: result });
+        }).catch(error => {
+            sendResponse({ success: false, error: error.message });
+        });
+        return true;
+    }
+
+    if (request.action === 'logout') {
+        CredentialManager.remove(request.diskType).then(() => {
+            sendResponse({ success: true });
         }).catch(error => {
             sendResponse({ success: false, error: error.message });
         });
@@ -277,7 +500,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'getLoginUrl') {
-        const url = LoginChecker.getLoginUrl(request.diskType);
+        const url = getLoginUrl(request.diskType);
         sendResponse({ success: true, data: url });
         return true;
     }
@@ -285,33 +508,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 处理转存请求
 async function handleTransfer(data) {
-    const { shareLink, sharePwd, targetPath, targetDisk } = data;
+    const { shareLink, sharePwd, targetDisk } = data;
 
     const shareInfo = parseShareLink(shareLink);
     if (!shareInfo) {
         throw new Error('无法识别的分享链接');
     }
 
-    // 检查目标网盘登录状态
-    await LoginChecker.checkAll();
-    const targetLoginInfo = LoginChecker.loginStatus[targetDisk.type];
-    if (!targetLoginInfo || !targetLoginInfo.isLoggedIn) {
-        throw new Error(`请先登录${targetDisk.name}`);
+    // 检查目标网盘是否已登录
+    const cred = await CredentialManager.get(targetDisk.type);
+    if (!cred || !cred.isLoggedIn) {
+        throw new Error(`请先在账号管理中登录${targetDisk.name}`);
+    }
+
+    // 检查源网盘和目标网盘是否一致
+    if (shareInfo.type !== targetDisk.type) {
+        throw new Error(`暂不支持跨网盘转存，请选择${shareInfo.name}作为目标`);
     }
 
     // 根据源网盘类型执行转存
     switch (shareInfo.type) {
+        case 'aliyun':
+            const shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
+            const files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
+            const fileIds = files.map(f => f.file_id);
+            return await DiskAPI.aliyun.saveShare(shareInfo.shareId, shareToken, fileIds);
+
         case 'quark':
             const quarkToken = await DiskAPI.quark.getShareToken(shareInfo.shareId, sharePwd);
             const quarkFiles = await DiskAPI.quark.getShareFileList(shareInfo.shareId, quarkToken.stoken);
             const fids = quarkFiles.map(f => f.fid);
             return await DiskAPI.quark.saveShare(shareInfo.shareId, quarkToken.stoken, fids);
 
-        case 'aliyun':
-            const shareToken = await DiskAPI.aliyun.getShareToken(shareInfo.shareId, sharePwd);
-            const files = await DiskAPI.aliyun.getShareFileList(shareInfo.shareId, shareToken);
-            // 阿里云盘转存需要在content script中执行（需要用户token）
-            return { success: true, message: '请在阿里云盘页面进行转存操作', files };
+        case '123pan':
+            await DiskAPI.pan123.getShareInfo(shareInfo.shareId, sharePwd);
+            const pan123Files = await DiskAPI.pan123.getShareFileList(shareInfo.shareId, sharePwd);
+            const fileIdList = pan123Files.map(f => f.FileId);
+            return await DiskAPI.pan123.saveShare(shareInfo.shareId, sharePwd, fileIdList);
 
         default:
             throw new Error(`暂不支持从${shareInfo.name}转存`);
@@ -348,4 +581,4 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }
 });
 
-console.log('威软网盘转存工具 Background Service Worker 已加载');
+console.log('威软网盘转存工具 v1.2.0 Background Service Worker 已加载');
