@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         威软网盘转存工具
 // @namespace    https://github.com/weiruankeji2025/weiruan-Network-disk-transfer
-// @version      1.2.0
+// @version      1.2.1
 // @description  网盘高速互相转存工具 - 支持登录各网盘后真实转存
 // @author       威软网盘转存工具
 // @match        *://pan.baidu.com/*
@@ -49,6 +49,8 @@
 // @connect      yun.139.com
 // @connect      www.123pan.com
 // @connect      drive.uc.cn
+// @connect      api.qrserver.com
+// @connect      passport.alipan.com
 // @connect      *
 // @run-at       document-end
 // @license      MIT
@@ -60,7 +62,7 @@
     // ==================== 配置信息 ====================
     const CONFIG = {
         appName: '威软网盘转存工具',
-        version: '1.2.0',
+        version: '1.2.1',
         author: '威软网盘转存工具',
         supportedDisks: [
             { name: '百度网盘', domain: ['pan.baidu.com', 'yun.baidu.com'], color: '#06a7ff', type: 'baidu' },
@@ -947,19 +949,50 @@
                 return new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
-                        url: 'https://passport.aliyundrive.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&isMobile=false&lang=zh_CN&returnUrl=&bizParams=&_bx-v=2.0.31',
+                        url: 'https://passport.alipan.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&isMobile=false&lang=zh_CN&returnUrl=&bizParams=&_bx-v=2.5.6',
+                        headers: {
+                            'Referer': 'https://www.alipan.com/'
+                        },
                         onload: (res) => {
                             try {
                                 const data = JSON.parse(res.responseText);
                                 if (data.content && data.content.data) {
+                                    const codeContent = data.content.data.codeContent;
+                                    // 使用在线API生成二维码图片
+                                    const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(codeContent)}`;
                                     resolve({
-                                        imgUrl: data.content.data.codeContent,
+                                        imgUrl: qrImgUrl,
+                                        codeContent: codeContent,
                                         ck: data.content.data.ck,
                                         t: data.content.data.t
                                     });
                                 } else {
-                                    reject(new Error('获取二维码失败'));
+                                    reject(new Error('获取二维码失败: ' + (data.content?.msg || '未知错误')));
                                 }
+                            } catch (e) {
+                                reject(new Error('解析响应失败: ' + e.message));
+                            }
+                        },
+                        onerror: (err) => reject(new Error('网络请求失败'))
+                    });
+                });
+            },
+
+            // 检查二维码扫描状态
+            checkQRStatus: (ck, t) => {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: 'https://passport.alipan.com/newlogin/qrcode/query.do?appName=aliyun_drive&fromSite=52&_bx-v=2.5.6',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Referer': 'https://www.alipan.com/'
+                        },
+                        data: `ck=${encodeURIComponent(ck)}&t=${t}&appName=aliyun_drive&appEntrance=web&isMobile=false&lang=zh_CN&returnUrl=&fromSite=52&bizParams=&navPlatform=MacIntel`,
+                        onload: (res) => {
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                resolve(data);
                             } catch (e) {
                                 reject(e);
                             }
@@ -1810,9 +1843,17 @@
 
             // 获取二维码按钮
             const qrcodeBtn = document.getElementById('wr-get-qrcode');
+            let qrPollingTimer = null;
+
             if (qrcodeBtn) {
                 qrcodeBtn.onclick = async () => {
                     try {
+                        // 清除之前的轮询
+                        if (qrPollingTimer) {
+                            clearInterval(qrPollingTimer);
+                            qrPollingTimer = null;
+                        }
+
                         qrcodeBtn.disabled = true;
                         qrcodeBtn.textContent = '获取中...';
 
@@ -1826,17 +1867,85 @@
                         }
 
                         const qrContainer = document.getElementById('wr-qrcode-img');
-                        if (qrData.imgUrl.startsWith('http')) {
-                            qrContainer.innerHTML = `<img src="${qrData.imgUrl}" style="width: 100%; height: 100%;">`;
-                        } else {
-                            // 如果是二维码内容，需要生成二维码图片
-                            qrContainer.innerHTML = `<div style="padding: 20px; word-break: break-all; font-size: 12px;">${qrData.imgUrl}</div>`;
-                        }
+                        qrContainer.innerHTML = `<img src="${qrData.imgUrl}" style="width: 100%; height: 100%; border-radius: 8px;">`;
 
                         qrcodeBtn.textContent = '刷新二维码';
                         qrcodeBtn.disabled = false;
 
                         UI.showToast('请使用APP扫描二维码', 'info');
+
+                        // 阿里云盘二维码状态轮询
+                        if (diskType === 'aliyun' && qrData.ck && qrData.t) {
+                            const statusTip = document.createElement('p');
+                            statusTip.id = 'wr-qr-status';
+                            statusTip.style.cssText = 'color: #666; font-size: 13px; margin-top: 10px;';
+                            statusTip.textContent = '等待扫码...';
+                            qrContainer.parentNode.appendChild(statusTip);
+
+                            qrPollingTimer = setInterval(async () => {
+                                try {
+                                    const status = await DiskLogin.aliyun.checkQRStatus(qrData.ck, qrData.t);
+                                    const statusEl = document.getElementById('wr-qr-status');
+
+                                    if (status.content && status.content.data) {
+                                        const qrStatus = status.content.data.qrCodeStatus;
+
+                                        if (qrStatus === 'NEW') {
+                                            if (statusEl) statusEl.textContent = '等待扫码...';
+                                        } else if (qrStatus === 'SCANED') {
+                                            if (statusEl) statusEl.textContent = '已扫码，请在手机上确认...';
+                                            if (statusEl) statusEl.style.color = '#ff9800';
+                                        } else if (qrStatus === 'CONFIRMED') {
+                                            clearInterval(qrPollingTimer);
+                                            if (statusEl) statusEl.textContent = '登录成功！';
+                                            if (statusEl) statusEl.style.color = '#4caf50';
+
+                                            // 获取token信息
+                                            const bizExt = status.content.data.bizExt;
+                                            if (bizExt) {
+                                                try {
+                                                    const tokenData = JSON.parse(atob(bizExt));
+                                                    if (tokenData.pds_login_result) {
+                                                        const loginResult = tokenData.pds_login_result;
+                                                        CredentialManager.save('aliyun', {
+                                                            accessToken: loginResult.accessToken,
+                                                            refreshToken: loginResult.refreshToken,
+                                                            driveId: loginResult.defaultDriveId,
+                                                            username: loginResult.nickName || loginResult.userName,
+                                                            userId: loginResult.userId,
+                                                            expireTime: Date.now() + (loginResult.expiresIn || 7200) * 1000,
+                                                            isLoggedIn: true
+                                                        });
+
+                                                        UI.showToast(`登录成功: ${loginResult.nickName || loginResult.userName}`, 'success');
+
+                                                        setTimeout(() => {
+                                                            document.getElementById('wr-login-modal')?.remove();
+                                                            document.querySelectorAll('.wr-overlay').forEach(o => {
+                                                                if (o.style.zIndex === '9999998') o.remove();
+                                                            });
+                                                            UI.refreshAccountCards();
+                                                        }, 1000);
+                                                    }
+                                                } catch (e) {
+                                                    console.error('解析登录结果失败:', e);
+                                                }
+                                            }
+                                        } else if (qrStatus === 'EXPIRED') {
+                                            clearInterval(qrPollingTimer);
+                                            if (statusEl) statusEl.textContent = '二维码已过期，请刷新';
+                                            if (statusEl) statusEl.style.color = '#f44336';
+                                        } else if (qrStatus === 'CANCELED') {
+                                            clearInterval(qrPollingTimer);
+                                            if (statusEl) statusEl.textContent = '已取消登录';
+                                            if (statusEl) statusEl.style.color = '#f44336';
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('轮询状态失败:', e);
+                                }
+                            }, 2000);
+                        }
 
                     } catch (error) {
                         UI.showToast('获取二维码失败: ' + error.message, 'error');
